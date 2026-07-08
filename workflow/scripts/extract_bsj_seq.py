@@ -2,6 +2,8 @@
 import sys
 import logging
 from pathlib import Path
+import pandas as pd
+from Bio import SeqIO
 
 # Import extract_bsj_sequences from paf_parser.py in same scripts/ folder ──
 sys.path.insert(0, str(Path(__file__).parent))
