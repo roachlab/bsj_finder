@@ -1,8 +1,8 @@
 ## Reference genome file path ─────────────────────────────────────────────
-genome: test/genome.fasta.gz
+genome: BSJ_test_dataset/dataset/genome.fa
 
 ## Sequence file path ─────────────────────────────────────────────────────
-readDirectory: test/sample_reads
+readDirectory: BSJ_test_dataset/dataset/
 outputDirectory: output
 
 threads: 4 #todo
