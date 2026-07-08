@@ -1,7 +1,7 @@
 name: polish
 channels:
-    - bioconda
     - conda-forge
+    - bioconda
     - defaults
 dependencies:
     - minimap2=2.31
