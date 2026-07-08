@@ -1,12 +1,23 @@
 import os
+
+rule concat_trim_reads:
+    input:
+        os.path.join(out_dir,"trim_results","{sample}_R1_trim.fastq.gz"),
+        os.path.join(out_dir,"trim_results","{sample}_R2_trim.fastq.gz"),
+    output:
+        os.path.join(out_dir,"trim_results","{sample}_trim.fastq.gz")
+    shell:
+        "cat {input} > {output}"
+
+
 rule polished_bsj_seq:
     input:
         ref_gz = os.path.join(out_dir, "dedup_results", "{sample}.bsj_dedup.fasta.gz"),
         reads  = os.path.join(out_dir, "trim_results",  "{sample}_trim.fastq.gz")
 
     output:
-        fasta = os.path.join(out_dir, "polished_results", "{sample}.polished.fasta.gz"),
-        fai   = os.path.join(out_dir, "polished_results", "{sample}.polished.fasta.gz.fai")
+        fasta = os.path.join(out_dir, "polished_results", "{sample}.polished.fasta"),
+        fai   = os.path.join(out_dir, "polished_results", "{sample}.polished.fasta.fai")
 
     conda:
         os.path.join("..", "env", "polished.yaml")
@@ -86,7 +97,7 @@ rule polished_bsj_seq:
         bcftools consensus -f "$REF" "$FILT_VCF" > "$POLISHED" 2>> {log}
 
         # ── Compress and index final polished FASTA ────────────────────────────
-        gzip -c "$POLISHED" > {output.fasta}
+        mv "$POLISHED" > {output.fasta}
         samtools faidx {output.fasta} 2>> {log}
 
         # ── Summary ─────────────────────────────────────────────────────────────

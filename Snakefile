@@ -41,11 +41,11 @@ include: "workflow/rules/polished_bsj_seq.smk"
 rule all:
     input:
         expand(
-            os.path.join(out_dir, "polished_results", "{sample}.polished.fasta.gz"),
+            os.path.join(out_dir, "polished_results", "{sample}.polished.fasta"),
             sample=SAMPLES
         ),
         expand(
-            os.path.join(out_dir, "polished_results", "{sample}.polished.fasta.gz.fai"),
+            os.path.join(out_dir, "polished_results", "{sample}.polished.fasta.fai"),
             sample=SAMPLES
         ),
         expand(
