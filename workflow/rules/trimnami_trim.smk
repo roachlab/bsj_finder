@@ -8,18 +8,12 @@ rule trimnami_fastp_paired_end:
     output:
         r1 = os.path.join(out_dir, "trim_results", "{sample}_R1_trim.fastq.gz"),
         r2= os.path.join(out_dir, "trim_results", "{sample}_R2_trim.fastq.gz")
-
     conda:
         os.path.join("..", "env", "trimnami.yaml")
-
     log:
         os.path.join("logs", "trimnami","{sample}.log")
-
     threads:
         8
-    params:
-
-        compression=config["trimnami"]["qc"]["compression"]
     shell:
         """
         fastp \\
