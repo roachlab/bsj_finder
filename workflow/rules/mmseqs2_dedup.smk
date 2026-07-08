@@ -1,8 +1,19 @@
 import os
 
+rule concat_bsj_extract:
+    input:
+        os.path.join(out_dir, "bsj_results", "{sample}_R1.bsj_sequences.fasta.gz"),
+        os.path.join(out_dir, "bsj_results", "{sample}_R2.bsj_sequences.fasta.gz")
+    output:
+        os.path.join(out_dir,"bsj_results","{sample}_concat.bsj_sequences.fasta.gz")
+    shell:
+        "cat {input} > {output}"
+
+
+
 rule mmseqs2_dedup:
     input:
-        fasta = os.path.join(out_dir, "bsj_results", "{sample}.bsj_sequences.fasta.gz")
+        fasta = os.path.join(out_dir, "bsj_results", "{sample}_concat.bsj_sequences.fasta.gz")
 
     output:
         fasta = os.path.join(out_dir, "dedup_results", "{sample}.bsj_dedup.fasta.gz"),

@@ -1,17 +1,18 @@
 import os
+
 rule bsj_cor_fasta:
     input:
         tsv   = os.path.join(out_dir, "bsj_results",  "{sample}.bsj_cor.tsv"),
-        fastq = os.path.join(out_dir, "trim_results",  "{sample}_trim.fastq.gz")
+        fastq = os.path.join(out_dir, "trim_results",  "{sample}_{R12}_trim.fastq.gz")
 
     output:
-        fasta = os.path.join(out_dir, "bsj_results", "{sample}.bsj_sequences.fasta.gz")
+        fasta = os.path.join(out_dir, "bsj_results", "{sample}_{R12}.bsj_sequences.fasta.gz")
 
     conda:
         os.path.join("..", "env", "biopython.yaml")
 
     log:
-        os.path.join("logs", "bsj_extract", "{sample}.log")
+        os.path.join("logs", "bsj_extract", "{sample}_{R12}.log")
 
     params:
         flank       = config.get("bsj_flank",      50),   # bases each side of BSJ

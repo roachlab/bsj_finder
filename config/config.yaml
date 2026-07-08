@@ -5,7 +5,6 @@ genome: BSJ_test_dataset/dataset/genome.fa
 readDirectory: BSJ_test_dataset/dataset/
 outputDirectory: output
 
-threads: 4 #todo
 
 # BSJ detection thresholds (Paf_parser.py) ─────────────────────────────────
 min_align_len: 50
