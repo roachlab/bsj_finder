@@ -1,0 +1,33 @@
+## Reference genome file path ─────────────────────────────────────────────
+genome: test/genome.fasta.gz
+
+## Sequence file path ─────────────────────────────────────────────────────
+readDirectory: test/sample_reads
+outputDirectory: output
+
+threads: 4 #todo
+
+# BSJ detection thresholds (Paf_parser.py) ─────────────────────────────────
+min_align_len: 50
+max_bsj_gap: -3
+max_bsj_ovlp: 15
+min_pident: 0.95
+min_mapq: 20
+valid_coord_dist: 10
+max_gap_size: 100000
+bsj_flank: 50
+read_suffix: "/1"
+
+# MMseqs2 deduplication parameters ─────────────────────────────────────────
+mmseqs_min_seq_id: 0.95
+mmseqs_min_cov: 0.70
+mmseqs_cov_mode: 0
+
+# ── Polishing parameters (bcftools) ──────────────────────────────────────────
+polish_min_mapq: 20
+polish_min_match: 75
+bcftools_min_qual: 20
+bcftools_min_dp: 3
+sort_mem: "1G"
+
+

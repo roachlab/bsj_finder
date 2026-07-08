@@ -1,0 +1,11 @@
+name: mmseqs2
+channels:
+    - bioconda
+    - conda-forge
+    - defaults
+dependencies:
+    - mmseqs2>=14.7
+parameters:
+    mmseqs_min_seq_id: 0.95    # 95% identity
+    mmseqs_min_cov: 0.70    # 70% coverage
+    mmseqs_cov_mode: 0       # 0=query+target, 1=shorter, 2=longer

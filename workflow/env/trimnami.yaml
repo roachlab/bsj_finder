@@ -1,0 +1,10 @@
+name: trimnami
+channels:
+    - bioconda
+    - conda-forge
+    - defaults
+dependencies:
+    - python=3.14.4
+    - pip
+    - pip:
+        - trimnami==0.1.4
