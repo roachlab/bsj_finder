@@ -10,13 +10,21 @@ rule concat_bsj_extract:
         "cat {input} > {output}"
 
 
+rule gzip_fasta:
+    input:
+        "{path}.fasta"
+    output:
+        "{path}.fasta.gz"
+    shell:
+        "gzip -1 {input}"
+
 
 rule mmseqs2_dedup:
     input:
         fasta = os.path.join(out_dir, "bsj_results", "{sample}_concat.bsj_sequences.fasta.gz")
 
     output:
-        fasta = os.path.join(out_dir, "dedup_results", "{sample}.bsj_dedup.fasta.gz"),
+        fasta = os.path.join(out_dir, "dedup_results", "{sample}.bsj_dedup.fasta"),
         tsv = os.path.join(out_dir, "dedup_results", "{sample}.bsj_cluster.tsv.gz")
 
     conda:
