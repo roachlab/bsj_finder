@@ -48,7 +48,7 @@ rule polished_bsj_seq:
 
         # Step 1: Decompress reference ──────────────────────────────────────
         echo "[$(date)] Step 1: Decompressing reference..." >> {log}
-        zcat {input.ref_gz} > "$REF"
+        gzip -c -d {input.ref_gz} > "$REF"
 
         # Step 2: Align raw reads to deduplicated BSJ sequences ────────────
         echo "[$(date)] Step 2: Aligning reads with minimap2..." >> {log}
