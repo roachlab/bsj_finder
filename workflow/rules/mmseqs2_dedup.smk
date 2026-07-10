@@ -38,7 +38,6 @@ rule mmseqs2_dedup:
 
         # Create per-sample working directory ───────────────────────────────
         mkdir -p {params.workdir}
-        WORKDIR="{params.workdir}"
         TMPDIR="{params.workdir}/tmp"
         mkdir -p "$TMPDIR"
 
@@ -51,7 +50,7 @@ rule mmseqs2_dedup:
         
         # Step 1. Decompress input FASTA ────────────────────────────────────────────
         echo "[$(date)] Step 1: Decompressing input FASTA..." >> {log}
-        gunzip -c {input.fasta} > "$WORKDIR/{wildcards.sample}_input.fasta" 2>> {log}
+        gunzip -c {input.fasta} > "{params.workdir}/{wildcards.sample}_input.fasta" 2>> {log}
 
         # Step 2: Create MMseqs2 database from input FASTA ─────────────────
         echo "[$(date)] Step 2: Creating sequence database....." 2>> {log}
