@@ -6,8 +6,8 @@ channels:
   - defaults
 dependencies:
   - python>=3.10
-  - pip
+  - pandas>=2.0
+  - biopython>=1.81
   - pip:
     - metasnek
-    - pandas>=2.0
-    - biopython>=1.81
+
