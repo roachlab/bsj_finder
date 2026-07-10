@@ -102,7 +102,7 @@ rule polished_bsj_seq:
 
         # ── Summary ─────────────────────────────────────────────────────────────
         INPUT_SEQS=$(grep -c "^>" "$REF"      || true)
-        OUTPUT_SEQS=$(grep -c "^>" "$POLISHED" || true)
+        OUTPUT_SEQS=$(grep -c "^>" "{output.fasta}" || true)
         RAW_VARIANTS=$(bcftools stats "$RAW_VCF"  | grep "number of records:" | head -1 | cut -f4)
         FILT_VARIANTS=$(bcftools stats "$FILT_VCF" | grep "number of records:" | head -1 | cut -f4)
 
