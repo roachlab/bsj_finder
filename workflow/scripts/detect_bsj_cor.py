@@ -2,7 +2,7 @@
 import sys
 import logging
 from pathlib import Path
-import pandas as pd
+#import pandas as pd
 
 # Import detect_bsj_paf from paf_parser.py in the same scripts/ folder ─────
 # __file__ = workflow/scripts/detect_bsj_tsv.py
