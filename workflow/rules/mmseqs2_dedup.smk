@@ -38,13 +38,13 @@ rule mmseqs2_dedup:
 
         # Create per-sample working directory ───────────────────────────────
         mkdir -p {params.workdir}
-        TMPDIR = "{params.workdir}/tmp"
+        TMPDIR="{params.workdir}/tmp"
         mkdir -p "$TMPDIR"
 
         # Intermediate database names (all inside workdir) ─────────────────
-        SEQDB = "{params.workdir}/seqDB"
-        CLUDB = "{params.workdir}/cluDB"
-        REPDB = "{params.workdir}/repDB"
+        SEQDB="{params.workdir}/seqDB"
+        CLUDB="{params.workdir}/cluDB"
+        REPDB="{params.workdir}/repDB"
         
         echo "[$(date)] START dedup: {wildcards.sample}" > {log}
         
