@@ -130,7 +130,8 @@ def extract_bsj_sequences(
     flank=50, read_id_suffix="/1",
 ):
     bsj_coords = {}
-    with open(bsj_tsv) as f:
+    tsv_opener = gzip.open(bsj_tsv, "rt") if bsj_tsv.endswith(".gz") else open(bsj_tsv)
+    with tsv_opener as f:
         next(f)
         for line in f:
             parts = line.strip().split("\t")

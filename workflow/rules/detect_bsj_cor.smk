@@ -1,20 +1,12 @@
 import os
 
-rule gzip_tsv:
-    input:
-        "{path}.tsv"
-    output:
-        "{path}.tsv.gz"
-    shell:
-        "gzip {input}"
-
 
 rule detect_bsj_cor:
     input:
         paf = os.path.join(out_dir, "align_results", "{sample}.paf.gz")
 
     output:
-        tsv = os.path.join(out_dir, "bsj_results", "{sample}.bsj_cor.tsv")
+        tsv = os.path.join(out_dir, "bsj_results", "{sample}.bsj_cor.tsv.gz")
 
     conda:
         os.path.join("..", "env", "biopython.yaml")

@@ -1,4 +1,4 @@
-
+import gzip
 import sys
 import logging
 from pathlib import Path
@@ -42,7 +42,7 @@ Path(tsv_out).parent.mkdir(parents=True, exist_ok=True)
 
 # Run detect_bsj_paf() and write output TSV ────────────────────────────────
 n_bsj = 0
-with open(tsv_out, "w") as out_tsv:
+with gzip.open(tsv_out, "wt") as out_tsv:
     out_tsv.write(
         "q_id\tbsj_coord\tchromosome\t"
         "s_start\ts_end\ts_strand\toverlap_trimmed_nt\n"
