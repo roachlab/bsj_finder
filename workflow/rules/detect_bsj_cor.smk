@@ -1,5 +1,14 @@
 import os
 
+rule gzip_tsv:
+    input:
+        "{path}.tsv"
+    output:
+        "{path}.tsv.gz"
+    shell:
+        "gzip {input}"
+
+
 rule detect_bsj_cor:
     input:
         paf = os.path.join(out_dir, "align_results", "{sample}.paf.gz")
