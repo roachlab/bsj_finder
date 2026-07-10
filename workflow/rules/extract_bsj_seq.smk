@@ -2,7 +2,7 @@ import os
 
 rule bsj_cor_fasta:
     input:
-        tsv   = os.path.join(out_dir, "bsj_results",  "{sample}.bsj_cor.tsv.gz"),
+        tsv   = os.path.join(out_dir, "bsj_results",  "{sample}.bsj_cor.tsv"),
         fastq = os.path.join(out_dir, "trim_results",  "{sample}_{R12}_trim.fastq.gz")
     output:
         fasta = os.path.join(out_dir, "bsj_results", "{sample}_{R12}.bsj_sequences.fasta.gz")
