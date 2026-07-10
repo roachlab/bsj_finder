@@ -97,7 +97,7 @@ rule polished_bsj_seq:
         bcftools consensus -f "$REF" "$FILT_VCF" > "$POLISHED" 2>> {log}
 
         # ── Compress and index final polished FASTA ────────────────────────────
-        mv "$POLISHED" > {output.fasta}
+        mv "$POLISHED" {output.fasta}
         samtools faidx {output.fasta} 2>> {log}
 
         # ── Summary ─────────────────────────────────────────────────────────────
