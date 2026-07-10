@@ -38,6 +38,7 @@ rule mmseqs2_dedup:
 
         # Create per-sample working directory ───────────────────────────────
         mkdir -p {params.workdir}
+        WORKDIR="{params.workdir}"
         TMPDIR="{params.workdir}/tmp"
         mkdir -p "$TMPDIR"
 
