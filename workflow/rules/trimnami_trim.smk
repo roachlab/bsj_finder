@@ -8,8 +8,7 @@ rule trimnami_fastp:
     params:
         r2_in = lambda wc: samples[wc.sample].get("R2", ""),
         r2_out = os.path.join(out_dir, "trim_results", "{sample}_R2_trim.fastq.gz"),
-        orphan_r1 = os.path.join(out_dir, "trim_results", "{sample}_orphan_R1_trim.fastq.gz"),
-        orphan_r2 = os.path.join(out_dir, "trim_results", "{sample}_orphan_R2_trim.fastq.gz"),
+        orphan= os.path.join(out_dir, "trim_results", "{sample}_RS_trim.fastq.gz"),
     conda:
         os.path.join("..", "env", "trimnami.yaml")
     log:
@@ -25,8 +24,8 @@ rule trimnami_fastp:
                 -I {params.r2_in} \\
                 -o {output.r1} \\
                 -O {params.r2_out} \\
-                --unpaired1 {params.orphan_r1} \\
-                --unpaired2 {params.orphan_r2} \\
+                --unpaired1 {params.orphan} \\
+                --unpaired2 {params.orphan} \\
                 -z 1 \\
                 --thread {threads} \\
                 --qualified_quality_phred 15 \\
