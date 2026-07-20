@@ -13,38 +13,36 @@ rule minimap2_alig:
         os.path.join("logs", "minimap2", "{sample}.log")
     params:
         r2_in = os.path.join(out_dir, "trim_results", "{sample}_R2_trim.fastq.gz"),
-        orphan_r1 = os.path.join(out_dir, "trim_results", "{sample}_orphan_R1_trim.fastq.gz"),
-        orphan_r2 = os.path.join(out_dir, "trim_results", "{sample}_orphan_R2_trim.fastq.gz"),
+        orphan = os.path.join(out_dir, "trim_results", "{sample}_orphan_RS_trim.fastq.gz"),
         outdir = os.path.join(out_dir, "align_results", "{sample}.paf.gz")
     shell:
             """
-             if [[ -n "{params.r2_in}" && -e "{params.r2_in}" ]]; then
-                cat\\
-                    {input.r1}\\
-                    {params.r2_in}\\
-                    {params.orphan_r1}\\
-                    {params.orphan_r2}\\
-                cat $FILES > {params.combined} p
-                | minimap2 \
-                    -x sr \
-                    -t {threads} \
-                    {input.genome} \
-                    {params.combined} \
-                    2> {log} \
+            if [[ -n "{params.r2_in}" && -e "{params.r2_in}" ]]; then
+            
+            minimap2 \\
+                -x splice:sr \\
+                --secondary=no \\
+                -t {threads} \\
+                {input.genome} \\
+                {input.r1} \\
+                {params.r2_in} \\
+                {params.orphan} \\
+                2> {log} \\
                 | gzip > {output.results}
+            
             else
-                | minimap2 \
-                    -x sr \
-                    --secondary=no \
-                    -t {threads} \
-                    {input.genome} \
-                    {input.r1} \
-                    2>> {log} \
+            
+            minimap2 \\
+                -x splice:sr \\
+                --secondary=no \\
+                -t {threads} \\
+                {input.genome} \\
+                {input.r1} \\
+                2> {log} \\
                 | gzip > {output.results}
             
             fi
             """
 
-# todo: update to handle SE
 # todo: check if paf output appends /1 /2 when they're not already present in read IDs
     # todo: if not, need a rule to make R1 R2 read IDs unique
