@@ -3,7 +3,7 @@
 rule minimap2_alig:
     input:
         genome = config['genome'],
-        r1 = os.path.join(out_dir, "trim_results", "{sample}_R1_trim.fastq.gz"),
+        r1 = os.path.join(out_dir, "trim_results", "{sample}_R1_trim_rename.fastq.gz"),
 
     output:
         results = os.path.join(out_dir, "align_results", "{sample}.paf.gz")
@@ -12,8 +12,8 @@ rule minimap2_alig:
     log:
         os.path.join("logs", "minimap2", "{sample}.log")
     params:
-        r2_in = os.path.join(out_dir, "trim_results", "{sample}_R2_trim.fastq.gz"),
-        orphan = os.path.join(out_dir, "trim_results", "{sample}_orphan_RS_trim.fastq.gz"),
+        r2_in = os.path.join(out_dir, "trim_results", "{sample}_R2_trim_rename.fastq.gz"),
+        orphan = os.path.join(out_dir, "trim_results", "{sample}_RS_trim_rename.fastq.gz"),
         outdir = os.path.join(out_dir, "align_results", "{sample}.paf.gz")
     shell:
             """
@@ -24,9 +24,9 @@ rule minimap2_alig:
                 --secondary=no \\
                 -t {threads} \\
                 {input.genome} \\
-                {input.r1} \\
+                <(gzip -dc {input.r1} \\
                 {params.r2_in} \\
-                {params.orphan} \\
+                {params.orphan}) \\
                 2> {log} \\
                 | gzip > {output.results}
             
