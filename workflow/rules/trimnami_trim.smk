@@ -77,14 +77,14 @@ rule rename_read_ids:
         os.path.join("logs", "rename_read_ids.{sample}.log")
     shell:
         """
-        seqtk rename {input.r1} '{wildcards.sample}/1' > {output.r1}
+        seqtk rename {input.r1} '{wildcards.sample}/1' | gzip -1 - > {output.r1}
         
         if [[ -n "{params.r2_in}" && -e "{params.r2_in}" ]]; then 
-            seqtk rename {params.r2_in} '{wildcards.sample}/2' > {params.r2_out}
+            seqtk rename {params.r2_in} '{wildcards.sample}/2' | gzip -1 - > {params.r2_out}
         fi
         
         if [[ -n "{params.orphan_in}" && -e "{params.orphan_in}" ]]; then 
-            seqtk rename {params.orphan_in} '{wildcards.sample}/S' > {params.orphan_out}
+            seqtk rename {params.orphan_in} '{wildcards.sample}/S' | gzip -1 - > {params.orphan_out}
         fi
         """
 
