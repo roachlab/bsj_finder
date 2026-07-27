@@ -2,12 +2,11 @@ import gzip
 import sys
 import logging
 from pathlib import Path
-#import pandas as pd
 
 # Import detect_bsj_paf from paf_parser.py in the same scripts/ folder ─────
 # __file__ = workflow/scripts/detect_bsj_tsv.py
 # paf_parser.py lives in the same directory
-sys.path.insert(0, str(Path(__file__).parent))##todo confirm from mike
+sys.path.insert(0, str(Path(__file__).parent)) ##todo confirm from mike
 from paf_parser import detect_bsj_paf
 
 # Redirect logging to Snakemake log file ────────────────────────────────────

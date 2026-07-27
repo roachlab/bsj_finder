@@ -3,30 +3,32 @@
 rule minimap2_alig:
     input:
         genome = config['genome'],
-        r1 = os.path.join(out_dir, "trim_results", "{sample}_R1_trim_rename.fastq.gz"),
-
+        r1 = os.path.join(out_dir, "trim_results", "{sample}_R1_trim_rename.fastq.gz")
     output:
         results = os.path.join(out_dir, "align_results", "{sample}.paf.gz")
     conda:
         os.path.join("..", "env", "minimap2.yaml")
     log:
-        os.path.join("logs", "minimap2", "{sample}.log")
+        os.path.join("logs", "minimap2_alig.{sample}.log")
+    threads:
+        8
     params:
         r2_in = os.path.join(out_dir, "trim_results", "{sample}_R2_trim_rename.fastq.gz"),
         orphan = os.path.join(out_dir, "trim_results", "{sample}_RS_trim_rename.fastq.gz"),
         outdir = os.path.join(out_dir, "align_results", "{sample}.paf.gz")
     shell:
             """
-            if [[ -n "{params.r2_in}" && -e "{params.r2_in}" ]]; then
+            orphan_arg=$( [[ -e "{params.orphan}" ]] && echo "{params.orphan}" || echo "" )
             
+            if [[ -n "{params.r2_in}" && -e "{params.r2_in}" ]]; then
             minimap2 \\
                 -x splice:sr \\
                 --secondary=no \\
                 -t {threads} \\
                 {input.genome} \\
-                <(gzip -dc {input.r1} \\
+                {input.r1} \\
                 {params.r2_in} \\
-                {params.orphan}) \\
+                {params.orphan} \\
                 2> {log} \\
                 | gzip > {output.results}
             
@@ -44,5 +46,3 @@ rule minimap2_alig:
             fi
             """
 
-# todo: check if paf output appends /1 /2 when they're not already present in read IDs
-    # todo: if not, need a rule to make R1 R2 read IDs unique

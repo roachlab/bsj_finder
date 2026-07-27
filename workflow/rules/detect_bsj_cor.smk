@@ -1,5 +1,3 @@
-import os
-
 
 rule detect_bsj_cor:
     input:
@@ -11,7 +9,7 @@ rule detect_bsj_cor:
     conda:
         os.path.join("..", "env", "biopython.yaml")
     log:
-        os.path.join("logs", "bsj_detect", "{sample}.log")
+        os.path.join("logs", "detect_bsj_cor.{sample}.log")
 
     params:
         min_align_len = config.get("min_align_len", 50),

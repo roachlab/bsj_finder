@@ -5,9 +5,7 @@ channels:
   - bioconda
   - defaults
 dependencies:
-  - python>=3.10
+  - python>=3
   - pandas>=2.0
   - biopython>=1.81
-  - pip:
-    - metasnek
 

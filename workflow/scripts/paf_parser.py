@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 from Bio import SeqIO
+# from workflow.scripts import extract_bsj_seq
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,12 +45,43 @@ def detect_bsj_paf(
     min_pident=0.95,  min_m_quality=20, valid_coord_dist=10,
     max_gap_size=100000,
 ):
+    PAF_DTYPES = {
+        "q_name": "string",  # nullable string — read name
+        "q_length": "int64",
+        "q_start": "int64",
+        "q_end": "int64",
+        "s_strand": "string",  # only ever "+" or "-" — category is fastest for
+        # the repeated equality checks (aln1["s_strand"] == "-")
+        "s_chr_name": "string",  # small fixed set of chromosome/contig names,
+        # repeated across millions of rows — category
+        # avoids storing the same string over and over
+        "s_length": "int64",
+        "s_start": "int64",
+        "s_end": "int64",
+        "r_matches": "int64",
+        "a_length": "int64",
+        "m_quality": "int64",
+        "x13": "string",  # optional SAM-style tags, e.g. "tp:A:P"
+        "x14": "string",  # kept as nullable string, not numeric —
+        "x15": "string",  # their format varies (tag:type:value) and
+        "x16": "string",  # isn't meant to be parsed as a single number
+        "x17": "string",
+        "x18": "string",
+    }
+
     paf_cols = [
         "q_name","q_length","q_start","q_end","s_strand","s_chr_name",
         "s_length","s_start","s_end","r_matches","a_length","m_quality",
-        "x13","x14","x15","x16","x17"
+        "x13","x14","x15","x16","x17","x18"
     ]
-    paf_df = pd.read_csv(file_paf_gz, sep="\t", header=None, names=paf_cols)
+    paf_df = pd.read_csv(
+        file_paf_gz,
+        sep="\t",
+        header=None,
+        names=paf_cols,
+        dtype=PAF_DTYPES, compression="gzip"
+    )
+    # paf_df = pd.read_csv(file_paf_gz, sep="\t", header=None, names=paf_cols)
     paf_df["pident"] = paf_df["r_matches"] / paf_df["a_length"]
     paf_df = paf_df[
         (paf_df["a_length"] >= min_align_len)      &
@@ -124,42 +156,46 @@ def detect_bsj_paf(
                 )
 
 
-# Sequence extraction ───────────────────────────────────────────────────────
-def extract_bsj_sequences(
-    bsj_tsv, fastq_file, output_fasta,
-    flank=50, read_id_suffix="/1",
-):
+def load_bsj_coordinates(bsj_tsv):
+    opener = gzip.open(bsj_tsv, "rt") if bsj_tsv.endswith(".gz") else open(bsj_tsv)
     bsj_coords = {}
-    tsv_opener = gzip.open(bsj_tsv, "rt") if bsj_tsv.endswith(".gz") else open(bsj_tsv)
-    with tsv_opener as f:
-        next(f)
+    with opener as f:
+        next(f)  # skip header
         for line in f:
             parts = line.strip().split("\t")
             bsj_coords[parts[0]] = int(parts[1])
+    logging.info(f"Loaded {len(bsj_coords):,} BSJ coordinates from {bsj_tsv}")
+    return bsj_coords
 
-    logging.info(f"Loaded {len(bsj_coords):,} BSJ coordinates")
 
-    seq_format = "fastq" if "fastq" in fastq_file else "fasta"
-    opener = gzip.open(fastq_file, "rt") if fastq_file.endswith(".gz") \
-             else open(fastq_file)
+# Sequence extraction ───────────────────────────────────────────────────────
+def extract_bsj_sequences(
+    fastq_file=None,
+    bsj_coords=None,
+    flank=50,
+):
+    if not Path(fastq_file).exists():
+        logging.info(f"FASTQ not present, skipping: {fastq_file}")
+        return
+
 
     extracted = 0
-    with opener as handle, gzip.open(output_fasta, "wt") as out_fasta:
-        for record in SeqIO.parse(handle, seq_format):
-            read_id = record.id + read_id_suffix
+    with gzip.open(fastq_file, "rt") as in_fq:
+        for record in SeqIO.parse(in_fq, "fastq"):
+            read_id = record.id
             if read_id not in bsj_coords:
                 continue
             bsj_coord = bsj_coords[read_id]
             start = max(0, bsj_coord - flank)
             end   = min(len(record.seq), bsj_coord + flank)
-            out_fasta.write(
+            yield (
                 f">{read_id}_BSJ_{bsj_coord}_region_{start}-{end}\n"
                 f"{record.seq[start:end]}\n"
             )
             extracted += 1
 
     not_found = len(bsj_coords) - extracted
-    logging.info(f"Extracted {extracted:,} sequences → {output_fasta}")
+    logging.info(f"Extracted {extracted:,} sequences")
     if not_found > 0:
         logging.warning(f"{not_found} read IDs not found in FASTQ")
 
@@ -173,21 +209,12 @@ def main():                               # ← FIXED: only ONE main()
 
     # Step 1 — write BSJ TSV
     n_bsj = 0
-    with open(args.tsv, "w") as out_tsv:
+    with gzip.open(args.tsv, "wt") as out_tsv:
         out_tsv.write(
             "q_id\tbsj_coord\tchromosome\t"
             "s_start\ts_end\ts_strand\toverlap_trimmed_nt\n"
         )
-        for line in detect_bsj_paf(
-            file_paf_gz      = args.paf,
-            min_align_len    = args.min_align_len,
-            max_bsj_gap      = args.max_bsj_gap,
-            max_bsj_ovlp     = args.max_bsj_ovlp,
-            min_pident       = args.min_pident,
-            min_m_quality    = args.min_mapq,
-            valid_coord_dist = args.valid_coord_dist,
-            max_gap_size     = args.max_gap_size,
-        ):
+        for line in detect_bsj_paf(args.paf):
             out_tsv.write(line)
             n_bsj += 1
 
@@ -196,13 +223,13 @@ def main():                               # ← FIXED: only ONE main()
         logging.warning("No BSJ detected — check PAF and filter parameters")
         return
 
+    bsj_coords = load_bsj_coordinates(args.bsj_tsv)
+
     # Step 2 — extract sequences
     extract_bsj_sequences(
-        bsj_tsv        = args.tsv,
         fastq_file     = args.fastq,
-        output_fasta   = args.fasta,
-        flank          = args.flank,
-        read_id_suffix = args.read_suffix,
+        bsj_coords     = bsj_coords,
+        flank          = args.flank
     )
     logging.info("paf_parser.py complete ✓")
 

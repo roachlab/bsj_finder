@@ -7,7 +7,7 @@ outputDirectory: output
 
 
 # BSJ detection thresholds (Paf_parser.py) ─────────────────────────────────
-min_align_len: 50
+min_align_len: 50 # todo: maybe change to 35% of read length?
 max_bsj_gap: -3
 max_bsj_ovlp: 15
 min_pident: 0.95
