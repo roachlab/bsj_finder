@@ -28,6 +28,8 @@ def parse_args():
     p.add_argument("--fasta", required=True)
     p.add_argument("--flank",        type=int,   default=50)
     p.add_argument("--read-suffix",  type=str,   default="/1")
+    p.add_argument("--min-align-len", type=int, default=30)
+    p.add_argument("--min-align-frac", type=float, default=0.35)
     p.add_argument("--min-align-len",type=int,   default=50)
     p.add_argument("--max-bsj-gap",  type=int,   default=-3)
     p.add_argument("--max-bsj-ovlp", type=int,   default=15)
@@ -41,8 +43,13 @@ def parse_args():
 # BSJ detection ─────────────────────────────────────────────────────────────
 def detect_bsj_paf(
     file_paf_gz,
-    min_align_len=50, max_bsj_gap=-3, max_bsj_ovlp=15,
-    min_pident=0.95,  min_m_quality=20, valid_coord_dist=10,
+    min_align_len=30,
+    min_align_frac=0.35,
+    max_bsj_gap=-3,
+    max_bsj_ovlp=15,
+    min_pident=0.95,
+    min_m_quality=20,
+    valid_coord_dist=10,
     max_gap_size=100000,
 ):
     PAF_DTYPES = {
@@ -83,8 +90,11 @@ def detect_bsj_paf(
     )
     # paf_df = pd.read_csv(file_paf_gz, sep="\t", header=None, names=paf_cols)
     paf_df["pident"] = paf_df["r_matches"] / paf_df["a_length"]
+
+    required_len = (paf_df["q_length"] * min_align_frac).clip(lower=min_align_len)
+
     paf_df = paf_df[
-        (paf_df["a_length"] >= min_align_len)      &
+        (paf_df["a_length"] >= required_len)      &
         (paf_df["pident"]   >= min_pident)         &
         (paf_df["a_length"] <= paf_df["q_length"]) &
         (paf_df["a_length"] != paf_df["q_length"]) &
@@ -214,7 +224,18 @@ def main():                               # ← FIXED: only ONE main()
             "q_id\tbsj_coord\tchromosome\t"
             "s_start\ts_end\ts_strand\toverlap_trimmed_nt\n"
         )
-        for line in detect_bsj_paf(args.paf):
+        for line in detect_bsj_paf(
+            args.paf,
+                file_paf_gz,
+                min_align_len=30,
+                min_align_frac=0.35,
+                max_bsj_gap=-3,
+                max_bsj_ovlp=15,
+                min_pident=0.95,
+                min_m_quality=20,
+                valid_coord_dist=10,
+                max_gap_size=100000,
+            ):
             out_tsv.write(line)
             n_bsj += 1
 

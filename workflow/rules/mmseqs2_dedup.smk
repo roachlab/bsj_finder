@@ -42,7 +42,26 @@ rule mmseqs2_dedup:
         
         echo "[$(date)] START dedup: {wildcards.sample}" > {log}
         
- 
+        SEQ_COUNT=$(gunzip -c {input.fasta} | grep -c "^>" || echo 0)
+        SEQ_COUNT=$(echo "$SEQ_COUNT" | tr -d '[:space:]')
+        echo "[$(date)] Input sequence count: $SEQ_COUNT" >> {log}
+
+        if [[ "$SEQ_COUNT" -eq 0 ]]; then
+            echo "[$(date)] No sequences found — writing empty outputs" >> {log}
+            gunzip -c {input.fasta} > {output.fasta}
+            printf "query\\ttarget\\n" | gzip > {output.tsv}
+            rm -rf {params.workdir}
+            exit 0
+        fi
+
+        if [[ "$SEQ_COUNT" -eq 1 ]]; then
+            echo "[$(date)] Only 1 sequence — skipping clustering" >> {log}
+            gunzip -c {input.fasta} > {output.fasta}
+            gunzip -c {input.fasta} | grep "^>" | sed 's/^>//' | \
+                awk '{{print $1"\\t"$1}}' | gzip > {output.tsv}
+            rm -rf {params.workdir}
+            exit 0
+        fi
                 
         mmseqs createdb \
             {input.fasta} \
@@ -79,7 +98,7 @@ rule mmseqs2_dedup:
         rm -rf {params.workdir}
 
         # Summary 
-        OUTPUT_COUNT=$(zcat {output.fasta} | grep -c ">" {output.fasta} || true)
+        OUTPUT_COUNT=$( grep -c ">" {output.fasta} || echo 0)
         # REMOVED=$((SEQ_COUNT - OUTPUT_COUNT))
         # echo "Input sequences  : $SEQ_COUNT"  2>> {log}
         echo "Unique sequences : $OUTPUT_COUNT" 2>> {log}

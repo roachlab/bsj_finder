@@ -43,6 +43,7 @@ rule polished_bsj_seq:
         mkdir -p {params.workdir}
 
         REF="{params.workdir}/{wildcards.sample}.ref.fasta"
+        READS="{params.workdir}/{wildcards.sample}.reads.fastq.gz"
         BAM="{params.workdir}/{wildcards.sample}.sorted.bam"
         RAW_VCF="{params.workdir}/{wildcards.sample}.raw.vcf.gz"
         NORM_VCF="{params.workdir}/{wildcards.sample}.norm.vcf.gz"
@@ -50,23 +51,38 @@ rule polished_bsj_seq:
         POLISHED="{params.workdir}/{wildcards.sample}.polished.fasta"
 
         gzip -c -d {input.ref_gz} > "$REF" #Decompress reference
+        
+        #Guard: check reference has real content before running anything
+        
+        REF_SEQ_COUNT=$(grep -c "^>" "$REF" || echo 0)
+        REF_SEQ_COUNT=$(echo "$REF_SEQ_COUNT" | tr -d '[:space:]')
+        echo "[$(date)] Reference sequence count: $REF_SEQ_COUNT" >> {log}
+        
+        if [[ "$REF_SEQ_COUNT" -eq 0 ]]; then
+            echo "[$(date)] No BSJ reference sequences for {wildcards.sample} — writing empty outputs" >> {log}
+            touch {output.fasta}
+            touch {output.fai}
+            rm -rf {params.workdir}
+            exit 0
+        fi
 
         #Align raw reads to deduplicated BSJ sequences     
         #Build combined reads file — only include sources that actually exist and contain data, so single-end samples work automatically.
         # Build an array — each file is a separate, distinct element
-        READ_FILES=("{input.r1}")
         
+        READ_FILES=("{input.r1}")
         if [[ -s "{params.r2_in}" ]]; then
             READ_FILES+=("{params.r2_in}")
         fi
-        
-        #if [[ -s "{params.orphan}" ]]; then
-        #    READ_FILES+=("{params.orphan}")
-        #fi
+        if [[ -s "{params.orphan}" ]]; then
+            READ_FILES+=("{params.orphan}")
+        fi
+        cat "${{READ_FILES[@]}}" > "$READS"
+
         
         echo "[$(date)] Aligning reads with minimap2: ${{READ_FILES[@]}}" >> {log}
         
-        minimap2 -x sr -a -t {threads} "$REF" "${{READ_FILES[@]}}" 2>> {log} \
+        minimap2 -x sr -a -t {threads} "$REF" "$READS" 2>> {log} \
             | samtools view -h -q {params.min_mapq} -m {params.min_match} \
             | samtools sort -@ {threads} -m {params.sort_mem} \
             > "$BAM" 2>> {log}

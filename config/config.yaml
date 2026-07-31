@@ -1,13 +1,14 @@
 ## Reference genome file path ─────────────────────────────────────────────
-genome: BSJ_test_dataset/dataset/genome.fa
+genome: test/genome.fasta.gz
 
 ## Sequence file path ─────────────────────────────────────────────────────
-readDirectory: BSJ_test_dataset/dataset/
+readDirectory: test/sample_reads_3
 outputDirectory: output
 
 
 # BSJ detection thresholds (Paf_parser.py) ─────────────────────────────────
-min_align_len: 50 # todo: maybe change to 35% of read length?
+min_align_len: 30
+min_align_frac: 0.35
 max_bsj_gap: -3
 max_bsj_ovlp: 15
 min_pident: 0.95

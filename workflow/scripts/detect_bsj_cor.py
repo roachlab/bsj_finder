@@ -6,7 +6,7 @@ from pathlib import Path
 # Import detect_bsj_paf from paf_parser.py in the same scripts/ folder ─────
 # __file__ = workflow/scripts/detect_bsj_tsv.py
 # paf_parser.py lives in the same directory
-sys.path.insert(0, str(Path(__file__).parent)) ##todo confirm from mike
+sys.path.insert(0, str(Path(__file__).parent))
 from paf_parser import detect_bsj_paf
 
 # Redirect logging to Snakemake log file ────────────────────────────────────
@@ -23,7 +23,8 @@ paf_file = str(snakemake.input.paf)
 tsv_out  = str(snakemake.output.tsv)
 
 # Tunable thresholds — set in rule params, fall back to defaults
-min_align_len    = snakemake.params.get("min_align_len",    50)
+min_align_len    = snakemake.params.get("min_align_len",    30)
+min_align_frac   = snakemake.params.get("min_align_frac",   0.35)
 max_bsj_gap      = snakemake.params.get("max_bsj_gap",      -3)
 max_bsj_ovlp     = snakemake.params.get("max_bsj_ovlp",     15)
 min_pident       = snakemake.params.get("min_pident",        0.95)

@@ -12,7 +12,8 @@ rule detect_bsj_cor:
         os.path.join("logs", "detect_bsj_cor.{sample}.log")
 
     params:
-        min_align_len = config.get("min_align_len", 50),
+        min_align_len = config.get("min_align_len", 30),
+        min_align_frac = config.get("min_align_frac", 0.35),
         max_bsj_gap = config.get("max_bsj_gap", -3),
         max_bsj_ovlp = config.get("max_bsj_ovlp", 15),
         min_pident = config.get("min_pident", 0.95),
