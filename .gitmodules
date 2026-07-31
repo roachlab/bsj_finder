@@ -1,3 +1,4 @@
 [submodule "BSJ_test_dataset"]
 	path = BSJ_test_dataset
 	url = https://github.com/roachlab/BSJ_test_dataset.git
+	branch = main
