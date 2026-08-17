@@ -14,12 +14,9 @@ rule minimap2_alig:
         8
     params:
         r2_in = os.path.join(out_dir, "trim_results", "{sample}_R2_trim_rename.fastq.gz"),
-        orphan = os.path.join(out_dir, "trim_results", "{sample}_RS_trim_rename.fastq.gz"),
         outdir = os.path.join(out_dir, "align_results", "{sample}.paf.gz")
     shell:
-            """
-            orphan_arg=$( [[ -e "{params.orphan}" ]] && echo "{params.orphan}" || echo "" )
-            
+            """            
             if [[ -n "{params.r2_in}" && -e "{params.r2_in}" ]]; then
             minimap2 \\
                 -x splice:sr \\
@@ -28,7 +25,6 @@ rule minimap2_alig:
                 {input.genome} \\
                 {input.r1} \\
                 {params.r2_in} \\
-                {params.orphan} \\
                 2> {log} \\
                 | gzip > {output.results}
             
