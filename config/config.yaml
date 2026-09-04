@@ -7,13 +7,17 @@ outputDirectory: output
 
 
 # BSJ detection thresholds (Paf_parser.py) ─────────────────────────────────
-min_align_len: 30
+min_align_len: 12
 min_align_frac: 0.35
 max_bsj_gap: -3
 max_bsj_ovlp: 15
 min_pident: 0.95
-min_mapq: 20
+min_mapq: 1
 valid_coord_dist: 10
+
+# SA-tag chimeric detector (sa_detect.py) — read-space arm gap/overlap tolerance
+sa_max_read_gap: 20    # max unaligned gap between the two arms (read bp)
+sa_max_read_ovlp: 20   # max arm overlap / microhomology (read bp)
 max_gap_size: 100000
 bsj_flank: 50
 read_suffix: "/1"
