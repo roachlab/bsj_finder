@@ -33,6 +33,7 @@ include: "workflow/rules/detect_bsj_cor.smk"
 include: "workflow/rules/extract_bsj_seq.smk"
 include: "workflow/rules/mmseqs2_dedup.smk"
 include: "workflow/rules/polished_bsj_seq.smk"
+include: "workflow/rules/pool_dedup.smk"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -51,5 +52,10 @@ rule all:
         expand(
             os.path.join(out_dir, "dedup_results", "{sample}.bsj_cluster.tsv.gz"),
             sample=SAMPLES
-        )
+        ),
+        # Cross-sample pools: raw BSJ pool + final polished BSJ pool
+        os.path.join(out_dir, "pool_results", "all_samples.bsj_pool_dedup.fasta"),
+        os.path.join(out_dir, "pool_results", "all_samples.bsj_pool_cluster.tsv"),
+        os.path.join(out_dir, "pool_results", "all_samples.polished_pool_dedup.fasta"),
+        os.path.join(out_dir, "pool_results", "all_samples.polished_pool_cluster.tsv")
 
