@@ -16,8 +16,12 @@ rule mmseqs2_dedup:
         fasta = os.path.join(out_dir, "dedup_results", "{sample}.bsj_dedup.fasta"),
         tsv = os.path.join(out_dir, "dedup_results", "{sample}.bsj_cluster.tsv.gz")
 
-    conda:
-        os.path.join("..", "env", "mmseqs2.yaml")
+    # NOTE: no conda env here on this host. The conda/bioconda mmseqs2 build is
+    # AVX2-compiled, but this machine (Xeon E5-2690 v2) has no AVX2 and the
+    # binary crashes with SIGILL ("Illegal instruction"). Instead we use the
+    # static SSE4.1 release binary shipped in tools/mmseqs/ (downloaded from
+    # https://mmseqs.com/latest/mmseqs-linux-sse41.tar.gz), which runs on this CPU.
+    # The static binary is self-contained; only standard coreutils are needed.
 
     log:
         os.path.join("logs", "mmseqs2_dedup_{sample}.log")
@@ -31,6 +35,12 @@ rule mmseqs2_dedup:
     shell:
         """
         set -euo pipefail
+
+        # Prefer the SSE4.1 static mmseqs (see note above); fall back to any
+        # mmseqs already on PATH if the tools/ dir is missing.
+        if [[ -x "tools/mmseqs/bin/mmseqs" ]]; then
+            export PATH="$(pwd)/tools/mmseqs/bin:$PATH"
+        fi
 
         # Create per-sample working directory
         mkdir -p {params.workdir}
