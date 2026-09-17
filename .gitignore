@@ -6,8 +6,13 @@ __pycache__/
 # snakemake files
 .snakemake/
 output/
+results/
 temp/
 test/
+
+# fastp writes its report into the working directory
+fastp.html
+fastp.json
 
 # C extensions
 *.so
@@ -157,7 +162,8 @@ activemq-data/
 .env
 .envrc
 .venv
-env/
+# `/env/` not `env/`: the bare pattern also matched workflow/env/ (the conda envs)
+/env/
 venv/
 ENV/
 env.bak/
