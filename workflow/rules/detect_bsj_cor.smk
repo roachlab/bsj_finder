@@ -1,18 +1,32 @@
-# Detect back-splice junctions from minimap2 SAM using the SA-tag / soft-clip parser.
-# Consumes the gzipped SAM from minimap2_alig and emits one row per supporting read in
-# the bsj_cor schema (q_id, bsj_coord, chromosome, s_start, s_end, s_strand,
-# overlap_trimmed_nt) consumed by extract_bsj_seq. sa_detect.py is stdlib-only, so no
-# conda environment is required.
+# Detect back-splice junctions from the minimap2 BAM using the SA-tag / soft-clip parser.
+# Consumes the unsorted, SA-filtered BAM from minimap2_alig and emits one row per
+# supporting read in the bsj_cor schema (q_id, bsj_coord, chromosome, s_start, s_end,
+# s_strand, overlap_trimmed_nt) consumed by extract_bsj_seq. sa_detect.py is stdlib-only
+# and reads SAM text on stdin, so samtools streams the BAM back out as SAM for it; the
+# shared minimap2 env supplies samtools.
+#
+# The `-d SA` filter already happened upstream, so the parser only ever sees chimeric
+# records. `-F 0x900` additionally drops secondary/supplementary lines HERE rather than
+# on disk: sa_detect.py anchors only on the primary line and rebuilds the second arm from
+# that line's SA:Z string, so supplementary records are ~50% of the BAM and 100% wasted
+# Python parsing -- but they are also the second junction arm, so they stay in the BAM
+# for IGV. sa_detect.py keeps its own flag/SA checks so it remains correct standalone.
 
 rule detect_bsj_cor:
     input:
-        sam = os.path.join(out_dir, "align_results", "{sample}.sam.gz")
+        bam = os.path.join(out_dir, "align_results", "{sample}.bam")
 
     output:
         tsv = os.path.join(out_dir, "bsj_results", "{sample}.bsj_cor.tsv.gz")
 
+    conda:
+        os.path.join("..", "env", "minimap2.yaml")
+
     log:
         os.path.join("logs", "detect_bsj_cor.{sample}.log")
+
+    threads:
+        2
 
     params:
         script        = os.path.join(workflow.basedir, "workflow", "scripts", "sa_detect.py"),
@@ -25,7 +39,7 @@ rule detect_bsj_cor:
     shell:
         """
         mkdir -p "$(dirname {output.tsv})"
-        zcat {input.sam} \
+        samtools view -@ {threads} -F 0x900 {input.bam} \
             | python3 {params.script} --sam - --out - \
                 --min-anchor {params.min_anchor} \
                 --min-mapq {params.min_mapq} \

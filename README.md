@@ -68,7 +68,7 @@ mapping-quality, and read-space gap/overlap filters.
 flowchart LR
     A[FASTQ reads<br/>PE or SE] --> B[fastp trim]
     B --> C[seqtk rename IDs]
-    C --> D["minimap2 -ax sr -k11 -w5<br/>single-end, SAM"]
+    C --> D["minimap2 -ax sr -k11 -w5<br/>single-end → SA-filtered BAM"]
     D --> E["sa_detect.py<br/>SA-tag / soft-clip BSJ detector"]
     E --> F["extract_bsj_seq<br/>±flank window per read"]
     F --> G["mmseqs2 linclust<br/>dedup junction seqs"]
@@ -91,8 +91,8 @@ Per sample, the DAG is:
 |---|------|-----|---------|--------|
 | 1 | `trimnami_fastp` | `trimnami.yaml` | `fastp` | `trim_results/{s}_R1_trim.fastq.gz` (+ R2, + `_RS` orphans) |
 | 2 | `rename_read_ids` | `seqtk.yaml` | `seqtk rename` | `trim_results/{s}_*_trim_rename.fastq.gz` |
-| 3 | `minimap2_alig` | `minimap2.yaml` | `minimap2 -ax sr -k11 -w5` | `align_results/{s}.sam.gz` |
-| 4 | `detect_bsj_cor` | *(stdlib only)* | `sa_detect.py` | `bsj_results/{s}.bsj_cor.tsv.gz` |
+| 3 | `minimap2_alig` | `minimap2.yaml` | `minimap2 -ax sr -k11 -w5`, `samtools view -d SA` | `align_results/{s}.bam` |
+| 4 | `detect_bsj_cor` | `minimap2.yaml` | `samtools view`, `sa_detect.py` | `bsj_results/{s}.bsj_cor.tsv.gz` |
 | 5 | `bsj_cor_fasta` | `biopython.yaml` | `extract_bsj_seq.py` | `bsj_results/{s}_bsj_sequences.fasta.gz` |
 | 6 | `mmseqs2_dedup` | `mmseqs2.yaml` | `mmseqs2 linclust` | `dedup_results/{s}.bsj_dedup.fasta`, `{s}.bsj_cluster.tsv.gz` |
 | 7 | `polished_bsj_seq` | `polished.yaml` | `minimap2`, `samtools`, `bcftools` | `polished_results/{s}.polished.fasta` (+ `.fai`) |
@@ -106,10 +106,25 @@ Stage notes:
 2. **Rename** — read IDs are made deterministic (`{sample}.1./.2./.S.`) so downstream steps and read
    pairing are stable.
 3. **Align** — all trimmed reads are concatenated and aligned **single-end** in SAM mode so that the
-   `SA:Z` supplementary tags needed for detection are emitted. Dense seeding (`-k 11 -w 5`) surfaces
-   short back-splice arms.
-4. **Detect** — `sa_detect.py` parses the SAM and emits one row **per supporting read** in the
-   `bsj_cor` schema (see [Outputs](#outputs)). Dependency-free (Python stdlib).
+   `SA:Z` supplementary tags needed for detection are emitted, then encoded to **BAM** on the fly and
+   filtered to SA-bearing records with `samtools view -d SA`. Dense seeding (`-k 11 -w 5`) surfaces
+   short back-splice arms. The BAM is left **unsorted** — detection is a single streaming pass, so a
+   coordinate sort would be wasted work; sort and index it yourself if you want to browse the
+   junction arms in IGV.
+
+   > **The alignment BAM is a junction-read BAM, not the whole library.** A read that maps
+   > end-to-end at one locus has no supplementary alignment and hence no `SA:Z` tag, so `-d SA`
+   > discards it — on real RNA-seq that is >99% of records. This keeps `align_results/` small and
+   > means `sa_detect.py` parses ~1% as many lines in Python, but **mapping rate, `samtools
+   > flagstat` and linear/host-gene coverage cannot be computed from it**. Drop `-d SA` from
+   > `minimap2_alig.smk` if you need those. Supplementary records are kept (they *are* the second
+   > junction arm); detection output is unaffected either way.
+4. **Detect** — `samtools view` streams the BAM back out as SAM text and `sa_detect.py` parses it,
+   emitting one row **per supporting read** in the `bsj_cor` schema (see [Outputs](#outputs)).
+   `sa_detect.py` itself is dependency-free (Python stdlib) and reads SAM on stdin, so it shares the
+   aligner's conda env purely for `samtools`. It reconstructs *both* junction arms from the primary
+   line's `SA:Z` string, never reading the supplementary's own record — which is why the upstream
+   `-d SA` filter is lossless for detection.
 5. **Extract** — for each supporting read, a sequence window spanning the junction (±`bsj_flank` bp)
    is written to a per-read FASTA (`extract_bsj_seq.py`, using helpers in `paf_parser.py`).
 6. **Dedup** — `mmseqs2 linclust` collapses near-identical junction sequences
@@ -139,7 +154,7 @@ conda activate bsj_finder
 Then run with `--use-conda` (below) and Snakemake will provision each rule's tools.
 
 **Tools used across the rules** (provisioned automatically with `--use-conda`, or install yourself
-to run without conda): `fastp`, `seqtk`, `minimap2` (2.31), `mmseqs2` (≥14.7), `samtools` (≥1.17),
+to run without conda): `fastp`, `seqtk`, `minimap2` (2.31), `samtools` (≥1.17), `mmseqs2` (≥14.7),
 `bcftools` (≥1.17), plus Python with `biopython` and `pandas`. `sa_detect.py` itself needs only the
 Python standard library.
 
@@ -199,7 +214,7 @@ Under `<outdir>/`:
 
 ```
 trim_results/     {s}_{R1,R2,RS}_trim[_rename].fastq.gz   trimmed + ID-renamed reads
-align_results/    {s}.sam.gz                               minimap2 single-end SAM (carries SA:Z)
+align_results/    {s}.bam                                  chimeric (SA:Z) reads only, unsorted BAM
 bsj_results/      {s}.bsj_cor.tsv.gz                       per-read BSJ calls  (see schema below)
                   {s}_bsj_sequences.fasta.gz               per-read junction-spanning sequences
 dedup_results/    {s}.bsj_dedup.fasta                      representative (deduplicated) BSJ seqs
@@ -308,8 +323,8 @@ bsj_finder/
 ├── workflow/
 │   ├── rules/
 │   │   ├── trimnami_trim.smk     # fastp trim + seqtk rename
-│   │   ├── minimap2_alig.smk     # single-end SAM alignment
-│   │   ├── detect_bsj_cor.smk    # runs sa_detect.py
+│   │   ├── minimap2_alig.smk     # single-end alignment → SA-filtered BAM
+│   │   ├── detect_bsj_cor.smk    # streams the BAM through sa_detect.py
 │   │   ├── extract_bsj_seq.smk   # per-read junction sequence extraction
 │   │   ├── mmseqs2_dedup.smk     # sequence deduplication
 │   │   └── polished_bsj_seq.smk  # consensus polishing

@@ -4,4 +4,7 @@ channels:
     - bioconda
     - defaults
 dependencies:
+    # Shared by minimap2_alig and detect_bsj_cor: minimap2 writes the alignments,
+    # samtools encodes them as BAM and streams them back out for sa_detect.py.
     - minimap2=2.31
+    - samtools>=1.17
