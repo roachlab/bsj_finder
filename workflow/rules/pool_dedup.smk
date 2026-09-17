@@ -135,6 +135,45 @@ rule mmseqs2_dedup_pool:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Summary table — single BSJ table across all samples
+#
+# Inner join: the final unique set of polished BSJs (representatives from the
+# cross-sample pool dedup) is joined back onto the per-sample bsj_cor rows, so
+# only junctions that SURVIVED deduplication appear. Sample of origin is dropped
+# — the same junction called in several samples collapses to one row; n_samples
+# counts the distinct samples contributing members to its cluster(s).
+# Stdlib-only script (no conda env).
+# ─────────────────────────────────────────────────────────────────────────────
+
+rule bsj_summary_table:
+    input:
+        cor = lambda wildcards: expand(
+            os.path.join(out_dir, "bsj_results", "{sample}.bsj_cor.tsv.gz"),
+            sample=SAMPLES
+        ),
+        pool_fasta = os.path.join(out_dir, "pool_results", "all_samples.polished_pool_dedup.fasta"),
+        pool_cluster = os.path.join(out_dir, "pool_results", "all_samples.polished_pool_cluster.tsv")
+    output:
+        tsv = os.path.join(out_dir, "pool_results", "all_samples.bsj_summary.tsv")
+    log:
+        os.path.join("logs", "bsj_summary_table.log")
+    params:
+        script = os.path.join(workflow.basedir, "workflow", "scripts", "bsj_summary.py"),
+    # Stdlib-only script (like sa_detect.py) — no conda env required.
+    shell:
+        """
+        set -euo pipefail
+        COR_ARGS=""
+        for f in {input.cor}; do COR_ARGS="$COR_ARGS --cor $f"; done
+        python3 {params.script} $COR_ARGS \\
+            --pool-fasta {input.pool_fasta} \\
+            --pool-cluster {input.pool_cluster} \\
+            --out {output.tsv} > {log} 2>&1 || {{ cat {log}; exit 1; }}
+        echo "[$(date)] summary rows (excl. header): $(( $(wc -l < {output.tsv}) - 1 ))" >> {log}
+        """
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # POLISHED pool — cross-sample unique polished BSJs (final step)
 # ─────────────────────────────────────────────────────────────────────────────
 

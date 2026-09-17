@@ -57,5 +57,6 @@ rule all:
         os.path.join(out_dir, "pool_results", "all_samples.bsj_pool_dedup.fasta"),
         os.path.join(out_dir, "pool_results", "all_samples.bsj_pool_cluster.tsv"),
         os.path.join(out_dir, "pool_results", "all_samples.polished_pool_dedup.fasta"),
-        os.path.join(out_dir, "pool_results", "all_samples.polished_pool_cluster.tsv")
+        os.path.join(out_dir, "pool_results", "all_samples.polished_pool_cluster.tsv"),
+        os.path.join(out_dir, "pool_results", "all_samples.bsj_summary.tsv")
 
