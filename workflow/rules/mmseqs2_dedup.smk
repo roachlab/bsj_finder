@@ -98,12 +98,18 @@ rule mmseqs2_dedup:
             {output.fasta} \
             2>> {log}
 
+        # mmseqs createtsv writes PLAIN TEXT, so it cannot write {output.tsv} directly
+        # (declared .tsv.gz). Write it inside the workdir, then compress into place --
+        # this matches the 0- and 1-sequence early-exit branches above, which already
+        # gzip their output. Must happen before the workdir is removed below.
         mmseqs createtsv \
             "$SEQDB" \
             "$SEQDB" \
             "$CLUDB" \
-            {output.tsv} \
+            "{params.workdir}/cluster.tsv" \
             2>> {log}
+
+        gzip -c "{params.workdir}/cluster.tsv" > {output.tsv}
                   
         rm -rf {params.workdir}
 
