@@ -10,9 +10,9 @@
 #                                   pool — the final cross-sample unique set of
 #                                   polished BSJs
 #
-# Same mmseqs params as the per-sample rule
-# (mmseqs_min_seq_id / min_cov / cov_mode) and the same SSE4.1 static binary
-# (this host has no AVX2 — see the note in mmseqs2_dedup.smk).
+# Same mmseqs params as the per-sample rule (mmseqs_min_seq_id / min_cov /
+# cov_mode) and the same conda-env-or-static-binary selection (see the MMSEQS2
+# BINARY SELECTION block in the Snakefile).
 # ═══════════════════════════════════════════════════════════════════════════
 
 rule concat_all_bsj:
@@ -42,8 +42,15 @@ rule mmseqs2_dedup_pool:
         fasta = os.path.join(out_dir, "pool_results", "all_samples.bsj_pool_dedup.fasta"),
         tsv   = os.path.join(out_dir, "pool_results", "all_samples.bsj_pool_cluster.tsv")
 
-    # NOTE: no conda env — see the AVX2/SIGILL note in mmseqs2_dedup.smk.
-    # Uses the SSE4.1 static binary from tools/mmseqs/ (falls back to PATH).
+    # mmseqs comes from the conda env by default; with `mmseqs_static: true` the
+    # env is dropped (conda: None) and the vendored SSE4.1 binary is used instead --
+    # see the MMSEQS2 BINARY SELECTION block in the Snakefile.
+    conda: MMSEQS_CONDA
+
+    # Singleton job over the whole ~1M-sequence pool, so it gets more than the
+    # per-sample rules. Snakemake clamps threads to --cores, so this is safe below 16.
+    threads:
+        16
 
     log:
         os.path.join("logs", "mmseqs2_dedup_pool.log")
@@ -53,14 +60,16 @@ rule mmseqs2_dedup_pool:
         min_cov = config.get("mmseqs_min_cov",    0.70),
         cov_mode = config.get("mmseqs_cov_mode",   0),
         workdir = os.path.join(out_dir, "pool_results", "all_samples_mmseqs2_tmp"),
+        mmseqs_bin_dir = MMSEQS_BIN_DIR,
 
     shell:
         """
         set -euo pipefail
 
-        # Prefer the SSE4.1 static mmseqs (see note above); fall back to PATH.
-        if [[ -x "tools/mmseqs/bin/mmseqs" ]]; then
-            export PATH="$(pwd)/tools/mmseqs/bin:$PATH"
+        # The static SSE4.1 build, when enabled, takes precedence over any mmseqs
+        # already on PATH (including the conda env's). Empty => leave PATH alone.
+        if [[ -n "{params.mmseqs_bin_dir}" ]]; then
+            export PATH="{params.mmseqs_bin_dir}:$PATH"
         fi
 
         mkdir -p {params.workdir}
@@ -96,6 +105,7 @@ rule mmseqs2_dedup_pool:
         mmseqs createdb \\
             {input.fasta} \\
             "$SEQDB" \\
+            --threads {threads} \\
             2>> {log}
 
         mmseqs linclust \\
@@ -105,12 +115,14 @@ rule mmseqs2_dedup_pool:
             --min-seq-id {params.min_seq_id} \\
             -c {params.min_cov}    \\
             --cov-mode {params.cov_mode}   \\
+            --threads {threads} \\
             2>> {log}
 
         mmseqs result2repseq \\
             "$SEQDB" \\
             "$CLUDB" \\
             "$REPDB" \\
+            --threads {threads} \\
             2>> {log}
 
         mmseqs convert2fasta \\
@@ -123,6 +135,7 @@ rule mmseqs2_dedup_pool:
             "$SEQDB" \\
             "$CLUDB" \\
             {output.tsv} \\
+            --threads {threads} \\
             2>> {log}
 
         rm -rf {params.workdir}
@@ -205,8 +218,15 @@ rule mmseqs2_dedup_pool_polished:
         fasta = os.path.join(out_dir, "pool_results", "all_samples.polished_pool_dedup.fasta"),
         tsv   = os.path.join(out_dir, "pool_results", "all_samples.polished_pool_cluster.tsv")
 
-    # NOTE: no conda env — see the AVX2/SIGILL note in mmseqs2_dedup.smk.
-    # Uses the SSE4.1 static binary from tools/mmseqs/ (falls back to PATH).
+    # mmseqs comes from the conda env by default; with `mmseqs_static: true` the
+    # env is dropped (conda: None) and the vendored SSE4.1 binary is used instead --
+    # see the MMSEQS2 BINARY SELECTION block in the Snakefile.
+    conda: MMSEQS_CONDA
+
+    # Singleton job over the whole ~1M-sequence pool, so it gets more than the
+    # per-sample rules. Snakemake clamps threads to --cores, so this is safe below 16.
+    threads:
+        16
 
     log:
         os.path.join("logs", "mmseqs2_dedup_pool_polished.log")
@@ -216,14 +236,16 @@ rule mmseqs2_dedup_pool_polished:
         min_cov = config.get("mmseqs_min_cov",    0.70),
         cov_mode = config.get("mmseqs_cov_mode",   0),
         workdir = os.path.join(out_dir, "pool_results", "all_samples_polished_mmseqs2_tmp"),
+        mmseqs_bin_dir = MMSEQS_BIN_DIR,
 
     shell:
         """
         set -euo pipefail
 
-        # Prefer the SSE4.1 static mmseqs (see note above); fall back to PATH.
-        if [[ -x "tools/mmseqs/bin/mmseqs" ]]; then
-            export PATH="$(pwd)/tools/mmseqs/bin:$PATH"
+        # The static SSE4.1 build, when enabled, takes precedence over any mmseqs
+        # already on PATH (including the conda env's). Empty => leave PATH alone.
+        if [[ -n "{params.mmseqs_bin_dir}" ]]; then
+            export PATH="{params.mmseqs_bin_dir}:$PATH"
         fi
 
         mkdir -p {params.workdir}
@@ -259,6 +281,7 @@ rule mmseqs2_dedup_pool_polished:
         mmseqs createdb \\
             {input.fasta} \\
             "$SEQDB" \\
+            --threads {threads} \\
             2>> {log}
 
         mmseqs linclust \\
@@ -268,12 +291,14 @@ rule mmseqs2_dedup_pool_polished:
             --min-seq-id {params.min_seq_id} \\
             -c {params.min_cov}    \\
             --cov-mode {params.cov_mode}   \\
+            --threads {threads} \\
             2>> {log}
 
         mmseqs result2repseq \\
             "$SEQDB" \\
             "$CLUDB" \\
             "$REPDB" \\
+            --threads {threads} \\
             2>> {log}
 
         mmseqs convert2fasta \\
@@ -286,6 +311,7 @@ rule mmseqs2_dedup_pool_polished:
             "$SEQDB" \\
             "$CLUDB" \\
             {output.tsv} \\
+            --threads {threads} \\
             2>> {log}
 
         rm -rf {params.workdir}

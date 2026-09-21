@@ -272,6 +272,21 @@ Set via `config/config.yaml` or `--config key=value`.
 | `mmseqs_min_seq_id` | `0.95` | Cluster identity threshold. |
 | `mmseqs_min_cov` | `0.70` | Coverage threshold. |
 | `mmseqs_cov_mode` | `0` | Coverage mode (0 = query+target). |
+| `mmseqs_static` | `false` | Use the vendored SSE4.1 binary in `tools/mmseqs/` instead of the conda env. See below. |
+
+> **`mmseqs_static`** — the bioconda `mmseqs2` package is AVX2-compiled and aborts with
+> SIGILL ("Illegal instruction") on a CPU without AVX2. Setting `mmseqs_static: true` drops the
+> conda env from the three mmseqs rules and runs the self-contained SSE4.1 release binary from
+> `tools/mmseqs/bin/` instead. `tools/` is gitignored (the binary is ~46 MB), so a fresh clone does
+> **not** have it — fetch it first:
+>
+> ```bash
+> curl -sL https://mmseqs.com/latest/mmseqs-linux-sse41.tar.gz | tar xz -C tools/
+> ```
+>
+> It is a property of the **host**, not of the dataset, so leave it `false` unless
+> `grep avx2 /proc/cpuinfo` comes up empty. If it is on and the binary is missing, the workflow
+> fails at parse time rather than mid-run.
 
 **Polishing (`samtools`/`bcftools`)**
 

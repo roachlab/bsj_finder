@@ -16,12 +16,15 @@ rule mmseqs2_dedup:
         fasta = os.path.join(out_dir, "dedup_results", "{sample}.bsj_dedup.fasta"),
         tsv = os.path.join(out_dir, "dedup_results", "{sample}.bsj_cluster.tsv.gz")
 
-    # NOTE: no conda env here on this host. The conda/bioconda mmseqs2 build is
-    # AVX2-compiled, but this machine (Xeon E5-2690 v2) has no AVX2 and the
-    # binary crashes with SIGILL ("Illegal instruction"). Instead we use the
-    # static SSE4.1 release binary shipped in tools/mmseqs/ (downloaded from
-    # https://mmseqs.com/latest/mmseqs-linux-sse41.tar.gz), which runs on this CPU.
-    # The static binary is self-contained; only standard coreutils are needed.
+    # mmseqs comes from the conda env by default; with `mmseqs_static: true` the
+    # env is dropped (conda: None) and the vendored SSE4.1 binary is used instead --
+    # see the MMSEQS2 BINARY SELECTION block in the Snakefile.
+    conda: MMSEQS_CONDA
+
+    # mmseqs defaults to every core on the box while snakemake reserves only 1, so
+    # without this many concurrent samples each grab all 40. 8 matches the other rules.
+    threads:
+        8
 
     log:
         os.path.join("logs", "mmseqs2_dedup_{sample}.log")
@@ -31,15 +34,16 @@ rule mmseqs2_dedup:
         min_cov = config.get("mmseqs_min_cov",    0.70),
         cov_mode = config.get("mmseqs_cov_mode",   0),
         workdir = os.path.join(out_dir, "dedup_results", "{sample}_mmseqs2_tmp"),# All intermediate files go into a per-sample working directory. Prevents file conflicts when multiple samples run in parallel
+        mmseqs_bin_dir = MMSEQS_BIN_DIR,
 
     shell:
         """
         set -euo pipefail
 
-        # Prefer the SSE4.1 static mmseqs (see note above); fall back to any
-        # mmseqs already on PATH if the tools/ dir is missing.
-        if [[ -x "tools/mmseqs/bin/mmseqs" ]]; then
-            export PATH="$(pwd)/tools/mmseqs/bin:$PATH"
+        # The static SSE4.1 build, when enabled, takes precedence over any mmseqs
+        # already on PATH (including the conda env's). Empty => leave PATH alone.
+        if [[ -n "{params.mmseqs_bin_dir}" ]]; then
+            export PATH="{params.mmseqs_bin_dir}:$PATH"
         fi
 
         # Create per-sample working directory
@@ -76,6 +80,7 @@ rule mmseqs2_dedup:
         mmseqs createdb \
             {input.fasta} \
             "$SEQDB" \
+            --threads {threads} \
             2>> {log}
 
         mmseqs linclust \
@@ -85,12 +90,14 @@ rule mmseqs2_dedup:
             --min-seq-id {params.min_seq_id} \
             -c {params.min_cov}    \
             --cov-mode {params.cov_mode}   \
+            --threads {threads} \
             2>> {log}
             
         mmseqs result2repseq \
             "$SEQDB" \
             "$CLUDB" \
             "$REPDB" \
+            --threads {threads} \
             2>> {log}
             
         mmseqs convert2fasta \
@@ -107,6 +114,7 @@ rule mmseqs2_dedup:
             "$SEQDB" \
             "$CLUDB" \
             "{params.workdir}/cluster.tsv" \
+            --threads {threads} \
             2>> {log}
 
         gzip -c "{params.workdir}/cluster.tsv" > {output.tsv}

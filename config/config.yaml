@@ -6,6 +6,14 @@ readDirectory: test/sample_reads_3
 outputDirectory: output
 
 
+# Read trimming (fastp) ────────────────────────────────────────────────────
+# Minimum read length AFTER trimming; fastp discards anything shorter. Set this
+# below the library's raw read length, with headroom for --cut_tail. If it is >=
+# the read length fastp drops the ENTIRE library, exits 0, and writes valid but
+# empty FASTQs that the rest of the pipeline happily consumes -- so check your
+# read length before changing datasets.
+fastp_min_len: 90
+
 # BSJ detection thresholds (Paf_parser.py) ─────────────────────────────────
 min_align_len: 12
 min_align_frac: 0.35
@@ -28,6 +36,11 @@ sa_max_read_ovlp: 20   # max arm overlap / microhomology (read bp)
 max_gap_size: 100000
 bsj_flank: 50
 read_suffix: "/1"
+
+# mmseqs2 binary: conda env (false) or the vendored SSE4.1 static build (true).
+# Leave false unless the host CPU lacks AVX2 -- the bioconda mmseqs2 package is
+# AVX2-compiled and dies with SIGILL there. See the Snakefile for details.
+mmseqs_static: false
 
 # MMseqs2 deduplication parameters ─────────────────────────────────────────
 mmseqs_min_seq_id: 0.95
