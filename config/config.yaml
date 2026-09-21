@@ -15,6 +15,13 @@ min_pident: 0.95
 min_mapq: 1
 valid_coord_dist: 10
 
+# minimap2 seeding density ────────────────────────────────────────────────
+# Dense seeding surfaces very short back-splice arms (needed on the small benchmark
+# genome). For multi-Gb references set these to the `sr` preset values (21 / 11):
+# the dense index is memory- and time-expensive and minimap2 rebuilds it per job.
+minimap2_k: 11
+minimap2_w: 5
+
 # SA-tag chimeric detector (sa_detect.py) — read-space arm gap/overlap tolerance
 sa_max_read_gap: 20    # max unaligned gap between the two arms (read bp)
 sa_max_read_ovlp: 20   # max arm overlap / microhomology (read bp)

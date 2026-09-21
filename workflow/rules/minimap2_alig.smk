@@ -33,7 +33,14 @@ rule minimap2_alig:
         8
     params:
         r2_in = os.path.join(out_dir, "trim_results", "{sample}_R2_trim_rename.fastq.gz"),
-        orphan_in = os.path.join(out_dir, "trim_results", "{sample}_RS_trim_rename.fastq.gz")
+        orphan_in = os.path.join(out_dir, "trim_results", "{sample}_RS_trim_rename.fastq.gz"),
+        # Seeding density. Defaults (-k 11 -w 5) are much denser than the `sr` preset
+        # (-k 21 -w 11) and surface very short back-splice arms, which is what the small
+        # benchmark genome needs. On a multi-Gb genome that dense index costs a lot of RAM
+        # and runtime (minimap2 builds the index per job), so set these back to 21/11 in
+        # the config for human-scale references.
+        k = config.get("minimap2_k", 11),
+        w = config.get("minimap2_w", 5)
     shell:
         """
         # Gather every trimmed read file that exists and has content.
@@ -45,7 +52,7 @@ rule minimap2_alig:
         zcat "${{READS[@]}}" \
             | minimap2 \
                 -ax sr \
-                -k 11 -w 5 \
+                -k {params.k} -w {params.w} \
                 -t {threads} \
                 {input.genome} \
                 - \
