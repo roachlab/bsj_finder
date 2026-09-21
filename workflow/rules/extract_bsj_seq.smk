@@ -2,8 +2,9 @@ import os
 
 rule bsj_cor_fasta:
     input:
+        # see renamed_reads() in the Snakefile -- adds r2/rs for paired samples only
+        unpack(renamed_reads),
         tsv = os.path.join(out_dir, "bsj_results",  "{sample}.bsj_cor.tsv.gz"),
-        r1 = os.path.join(out_dir, "trim_results", "{sample}_R1_trim_rename.fastq.gz")
     output:
         fasta = os.path.join(out_dir, "bsj_results", "{sample}_bsj_sequences.fasta.gz")
     conda:

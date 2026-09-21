@@ -21,8 +21,11 @@
 
 rule minimap2_alig:
     input:
+        # unpack() adds r2/rs for paired samples only -- see renamed_reads() in the
+        # Snakefile. The shell still reads the params copies, so its `-s` guards are
+        # unchanged; this exists so Snakemake TRACKS R2/RS as real dependencies.
+        unpack(renamed_reads),
         genome = config['genome'],
-        r1 = os.path.join(out_dir, "trim_results", "{sample}_R1_trim_rename.fastq.gz")
     output:
         bam = os.path.join(out_dir, "align_results", "{sample}.bam")
     conda:

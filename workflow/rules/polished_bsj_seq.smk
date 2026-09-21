@@ -12,8 +12,11 @@
 # todo: maybe update polish step to use only BSJ reads
 rule polished_bsj_seq:
     input:
+        # see renamed_reads() in the Snakefile -- adds r2/rs for paired samples only.
+        # This is the LAST consumer of the renamed reads, which are temp(), so this
+        # rule is what pins their lifetime: they are deleted once it completes.
+        unpack(renamed_reads),
         ref_gz = os.path.join(out_dir, "dedup_results", "{sample}.bsj_dedup.fasta.gz"),
-        r1  = os.path.join(out_dir, "trim_results",  "{sample}_R1_trim_rename.fastq.gz")
 
     output:
         fasta = os.path.join(out_dir, "polished_results", "{sample}.polished.fasta"),
