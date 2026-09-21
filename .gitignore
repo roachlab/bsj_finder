@@ -7,6 +7,13 @@ __pycache__/
 .snakemake/
 output/
 results/
+# per-dataset output trees (results_gbm/, results_tassie_devil/, ...). The bare
+# `results/` above does not match these, so without this line `git add -A` stages
+# hundreds of GB of BAMs.
+results_*/
+# samtools sort scratch: polished_bsj_seq calls `samtools sort` without -T, so it
+# writes samtools.<pid>.<n>.tmp.NNNN.bam into the working directory (the repo root).
+samtools.*.tmp.*.bam
 temp/
 test/
 
