@@ -32,6 +32,12 @@ rule mmseqs2_dedup:
         """
         set -euo pipefail
 
+        # Prefer the SSE4.1 static mmseqs (see note above); fall back to any
+        # mmseqs already on PATH if the tools/ dir is missing.
+        if [[ -x "tools/mmseqs/bin/mmseqs" ]]; then
+            export PATH="$(pwd)/tools/mmseqs/bin:$PATH"
+        fi
+
         # Create per-sample working directory
         mkdir -p {params.workdir}
         TMPDIR="{params.workdir}/tmp"
@@ -92,8 +98,10 @@ rule mmseqs2_dedup:
             "$SEQDB" \
             "$SEQDB" \
             "$CLUDB" \
-            {output.tsv} \
+            "{params.workdir}/cluster.tsv" \
             2>> {log}
+
+        gzip -c "{params.workdir}/cluster.tsv" > {output.tsv}
                   
         rm -rf {params.workdir}
 

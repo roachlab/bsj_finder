@@ -256,6 +256,8 @@ Set via `config/config.yaml` or `--config key=value`.
 
 | Key | Default | Meaning |
 |-----|---------|---------|
+| `minimap2_k` | `11` | minimap2 `-k` (seed length). Set to `21` (the `sr` preset default) for multi-Gb genomes. |
+| `minimap2_w` | `5` | minimap2 `-w` (minimizer window). Set to `11` for multi-Gb genomes. |
 | `min_align_len` | `12` | Minimum aligned bp per arm (the SA detector's per-arm **anchor**). |
 | `min_mapq` | `1` | Minimum MAPQ per arm (short split arms map at low MAPQ). |
 | `sa_max_read_gap` | `20` | Max unaligned gap between the two arms in read space (bp). |
@@ -348,8 +350,10 @@ bsj_finder/
 
 - **Real-genome tuning.** Dense seeding (`-k 11 -w 5`) and a low per-arm anchor (`min_align_len 12`)
   maximize sensitivity on the small benchmark genome, but on human-scale, repetitive sequence they
-  cost runtime/memory and can admit spurious short-arm calls. Raise the anchor and consider default
-  seeding before production use.
+  cost runtime/memory and can admit spurious short-arm calls. Seeding is configurable via
+  `minimap2_k` / `minimap2_w`; for a multi-Gb reference use the `sr` preset values (`21` / `11`),
+  raise `min_align_len` (e.g. to `20`), and raise `max_gap_size` above the longest plausible circle
+  span (`100000` silently drops circles from long host genes — human genes routinely exceed it).
 - **Read type.** `-ax sr` is an Illumina short-read preset. For long reads (ONT/PacBio) switch to a
   `map-ont`-style preset and re-validate the SA/geometry logic.
 - **Precision vs. recall.** The detector is deliberately permissive (motif-free, low anchor) to
