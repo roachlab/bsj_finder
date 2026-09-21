@@ -14,6 +14,9 @@ test/
 fastp.html
 fastp.json
 
+# static SSE4.1 mmseqs binary (see workflow/rules/mmseqs2_dedup.smk) -- 46 MB, not committed
+tools/
+
 # C extensions
 *.so
 
