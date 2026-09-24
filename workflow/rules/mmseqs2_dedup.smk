@@ -21,10 +21,26 @@ rule mmseqs2_dedup:
     # see the MMSEQS2 BINARY SELECTION block in the Snakefile.
     conda: MMSEQS_CONDA
 
-    # mmseqs defaults to every core on the box while snakemake reserves only 1, so
-    # without this many concurrent samples each grab all 40. 8 matches the other rules.
+    # threads: 1 is a CORRECTNESS setting, not a performance one.
+    #
+    # mmseqs linclust is order-dependent when multithreaded: two identical runs pick
+    # different cluster representatives. Measured on this data, rep counts moved by
+    # ~0.03-0.07% run to run (GBM polished pool 763,313 vs 763,542), which propagates
+    # into polished_results and every n_samples in the summary table -- so no published
+    # junction catalogue could be reproduced exactly. Single-threaded linclust is
+    # deterministic; verified by two full end-to-end runs producing a byte-identical
+    # summary table.
+    #
+    # The cost is ~12 min per dataset, all of it in the two pool rules (measured on the
+    # GBM pools: polished 5m09s vs 0m43s at 16 threads, raw 9m07s vs 1m26s). The
+    # per-sample rule costs almost nothing, since --cores still runs many samples at
+    # once. Peak scratch is slightly LOWER single-threaded, so there is no memory
+    # argument against it either.
+    #
+    # If you ever trade this back for speed, expect the catalogue to shift slightly and
+    # say so wherever the numbers are published.
     threads:
-        8
+        1
 
     log:
         os.path.join("logs", "mmseqs2_dedup_{sample}.log")

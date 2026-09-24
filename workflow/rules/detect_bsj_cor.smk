@@ -11,6 +11,12 @@
 # that line's SA:Z string, so supplementary records are ~50% of the BAM and 100% wasted
 # Python parsing -- but they are also the second junction arm, so they stay in the BAM
 # for IGV. sa_detect.py keeps its own flag/SA checks so it remains correct standalone.
+#
+# This was a `samtools | python3 | gzip` shell pipeline; the samtools and gzip ends now
+# live inside the script so `script:` can be used. That matters because Snakemake hashes
+# a script: file as part of the rule's code, whereas the old `python3 {params.script}`
+# form made it an untracked param string -- edits to the detector never triggered a
+# rerun. Streaming is unchanged (samtools is still a subprocess read lazily).
 
 rule detect_bsj_cor:
     input:
@@ -29,23 +35,11 @@ rule detect_bsj_cor:
         2
 
     params:
-        script        = os.path.join(workflow.basedir, "workflow", "scripts", "sa_detect.py"),
         min_anchor    = config.get("min_align_len",     30),   # min aligned bp per arm
         min_mapq      = config.get("min_mapq",           1),
         max_gap_size  = config.get("max_gap_size",  100000),   # max genomic span of a circle
         max_read_gap  = config.get("sa_max_read_gap",   15),   # max unaligned gap between arms (read bp)
         max_read_ovlp = config.get("sa_max_read_ovlp",  15)    # max arm overlap / microhomology (read bp)
 
-    shell:
-        """
-        mkdir -p "$(dirname {output.tsv})"
-        samtools view -@ {threads} -F 0x900 {input.bam} \
-            | python3 {params.script} --sam - --out - \
-                --min-anchor {params.min_anchor} \
-                --min-mapq {params.min_mapq} \
-                --max-gap-size {params.max_gap_size} \
-                --max-read-gap {params.max_read_gap} \
-                --max-read-ovlp {params.max_read_ovlp} \
-                2> {log} \
-            | gzip > {output.tsv}
-        """
+    script:
+        os.path.join("..", "scripts", "sa_detect.py")

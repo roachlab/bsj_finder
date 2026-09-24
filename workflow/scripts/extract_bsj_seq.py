@@ -4,11 +4,11 @@ import gzip
 import logging
 from pathlib import Path
 
-# Import extract_bsj_sequences from paf_parser.py in same scripts/ folder ──
+# Import the junction-sequence helpers from bsj_seq_utils.py (same scripts/ dir) ──
 sys.path.insert(0, str(Path(__file__).parent))
 
 # from workflow.scripts import extract_bsj_sequences
-from paf_parser import load_bsj_coordinates, extract_bsj_sequences
+from bsj_seq_utils import load_bsj_coordinates, extract_bsj_sequences
 
 # Redirect logging to Snakemake log file ────────────────────────────────────
 log_file = str(snakemake.log[0])

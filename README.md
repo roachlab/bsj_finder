@@ -126,7 +126,7 @@ Stage notes:
    line's `SA:Z` string, never reading the supplementary's own record — which is why the upstream
    `-d SA` filter is lossless for detection.
 5. **Extract** — for each supporting read, a sequence window spanning the junction (±`bsj_flank` bp)
-   is written to a per-read FASTA (`extract_bsj_seq.py`, using helpers in `paf_parser.py`).
+   is written to a per-read FASTA (`extract_bsj_seq.py`, using helpers in `bsj_seq_utils.py`).
 6. **Dedup** — `mmseqs2 linclust` collapses near-identical junction sequences
    (`--min-seq-id 0.95 -c 0.70`), producing representative sequences plus a cluster membership table.
    Empty / single-sequence inputs are handled gracefully.
@@ -298,11 +298,6 @@ Set via `config/config.yaml` or `--config key=value`.
 | `bcftools_min_dp` | `3` | Variant `DP` filter. |
 | `sort_mem` | `1G` | `samtools sort -m`. |
 
-> **Legacy keys** — `min_align_frac`, `max_bsj_gap`, `max_bsj_ovlp`, `min_pident`,
-> `valid_coord_dist` belong to the previous PAF-based detector and are **not used** by the current
-> `sa_detect.py` path. They remain in `config.yaml` for reference. (`min_align_len` and `min_mapq`
-> *are* still used, as noted above.)
-
 ---
 
 ## Benchmark
@@ -348,16 +343,15 @@ bsj_finder/
 │   ├── scripts/
 │   │   ├── sa_detect.py          # SA-tag / soft-clip BSJ detector (current)
 │   │   ├── extract_bsj_seq.py    # extraction driver
-│   │   ├── paf_parser.py         # sequence-extraction helpers (still used) + legacy PAF detector
-│   │   └── detect_bsj_cor.py     # legacy PAF detector (superseded by sa_detect.py)
+│   │   └── bsj_seq_utils.py      # junction-sequence helpers for extract_bsj_seq.py
 │   └── env/                      # per-rule conda environments
 └── BSJ_test_dataset/             # git submodule: synthetic dataset + benchmark harness
 ```
 
-**On the legacy files:** the detection path was migrated from a PAF/split-read approach to the
-`SA:Z` chimeric detector. `detect_bsj_cor.py` (the old detector) is superseded by `sa_detect.py`.
-`paf_parser.py` is **not** dead code, however — it still provides `load_bsj_coordinates` and
-`extract_bsj_sequences`, which the sequence-extraction step imports.
+**On `bsj_seq_utils.py`:** the detection path was migrated from a PAF/split-read approach to the
+`SA:Z` chimeric detector (`sa_detect.py`). The old detector, its CLI and the `detect_bsj_paf`
+function have been removed; the filename survives because `extract_bsj_seq.py` imports
+`load_bsj_coordinates` and `extract_bsj_sequences` from it. It was named `paf_parser.py` until 2026-09-24.
 
 ---
 

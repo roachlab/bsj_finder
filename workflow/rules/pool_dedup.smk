@@ -47,10 +47,26 @@ rule mmseqs2_dedup_pool:
     # see the MMSEQS2 BINARY SELECTION block in the Snakefile.
     conda: MMSEQS_CONDA
 
-    # Singleton job over the whole ~1M-sequence pool, so it gets more than the
-    # per-sample rules. Snakemake clamps threads to --cores, so this is safe below 16.
+    # threads: 1 is a CORRECTNESS setting, not a performance one.
+    #
+    # mmseqs linclust is order-dependent when multithreaded: two identical runs pick
+    # different cluster representatives. Measured on this data, rep counts moved by
+    # ~0.03-0.07% run to run (GBM polished pool 763,313 vs 763,542), which propagates
+    # into polished_results and every n_samples in the summary table -- so no published
+    # junction catalogue could be reproduced exactly. Single-threaded linclust is
+    # deterministic; verified by two full end-to-end runs producing a byte-identical
+    # summary table.
+    #
+    # The cost is ~12 min per dataset, all of it in the two pool rules (measured on the
+    # GBM pools: polished 5m09s vs 0m43s at 16 threads, raw 9m07s vs 1m26s). The
+    # per-sample rule costs almost nothing, since --cores still runs many samples at
+    # once. Peak scratch is slightly LOWER single-threaded, so there is no memory
+    # argument against it either.
+    #
+    # If you ever trade this back for speed, expect the catalogue to shift slightly and
+    # say so wherever the numbers are published.
     threads:
-        16
+        1
 
     log:
         os.path.join("logs", "mmseqs2_dedup_pool.log")
@@ -171,19 +187,20 @@ rule bsj_summary_table:
     log:
         os.path.join("logs", "bsj_summary_table.log")
     params:
-        script = os.path.join(workflow.basedir, "workflow", "scripts", "bsj_summary.py"),
-    # Stdlib-only script (like sa_detect.py) — no conda env required.
-    shell:
-        """
-        set -euo pipefail
-        COR_ARGS=""
-        for f in {input.cor}; do COR_ARGS="$COR_ARGS --cor $f"; done
-        python3 {params.script} $COR_ARGS \\
-            --pool-fasta {input.pool_fasta} \\
-            --pool-cluster {input.pool_cluster} \\
-            --out {output.tsv} > {log} 2>&1 || {{ cat {log}; exit 1; }}
-        echo "[$(date)] summary rows (excl. header): $(( $(wc -l < {output.tsv}) - 1 ))" >> {log}
-        """
+        locus_tol = config.get("bsj_locus_tol", 10),
+    # Stdlib-only script (like sa_detect.py) -- no conda env required, so it runs under
+    # Snakemake's own interpreter.
+    #
+    # script: rather than shell: -- the script then reads input/output/params/log off
+    # the injected `snakemake` object instead of a hand-built argv, and, importantly,
+    # Snakemake HASHES THE FILE as part of the rule's code. Under the old
+    # `python3 {params.script}` form the script was just a param string, so edits to it
+    # never tripped the code rerun trigger and a changed summary script would silently
+    # not re-run on an otherwise up-to-date tree.
+    #
+    # The path is resolved relative to THIS .smk file (same convention as conda:).
+    script:
+        os.path.join("..", "scripts", "bsj_summary.py")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -223,10 +240,26 @@ rule mmseqs2_dedup_pool_polished:
     # see the MMSEQS2 BINARY SELECTION block in the Snakefile.
     conda: MMSEQS_CONDA
 
-    # Singleton job over the whole ~1M-sequence pool, so it gets more than the
-    # per-sample rules. Snakemake clamps threads to --cores, so this is safe below 16.
+    # threads: 1 is a CORRECTNESS setting, not a performance one.
+    #
+    # mmseqs linclust is order-dependent when multithreaded: two identical runs pick
+    # different cluster representatives. Measured on this data, rep counts moved by
+    # ~0.03-0.07% run to run (GBM polished pool 763,313 vs 763,542), which propagates
+    # into polished_results and every n_samples in the summary table -- so no published
+    # junction catalogue could be reproduced exactly. Single-threaded linclust is
+    # deterministic; verified by two full end-to-end runs producing a byte-identical
+    # summary table.
+    #
+    # The cost is ~12 min per dataset, all of it in the two pool rules (measured on the
+    # GBM pools: polished 5m09s vs 0m43s at 16 threads, raw 9m07s vs 1m26s). The
+    # per-sample rule costs almost nothing, since --cores still runs many samples at
+    # once. Peak scratch is slightly LOWER single-threaded, so there is no memory
+    # argument against it either.
+    #
+    # If you ever trade this back for speed, expect the catalogue to shift slightly and
+    # say so wherever the numbers are published.
     threads:
-        16
+        1
 
     log:
         os.path.join("logs", "mmseqs2_dedup_pool_polished.log")
