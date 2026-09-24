@@ -1,0 +1,73 @@
+## Reference genome file path
+## Sarcophilus harrisii (Tasmanian devil) — mSarHar1.11, RefSeq GCF_902635505.1
+## (TassieDev1/GCA_000005855.3 is no longer served by NCBI; mSarHar1.11 is the
+## current RefSeq reference assembly.) Symlink in repo root -> /scratch/mike/sarcoph/mSarHar1.11_genome.fa
+genome: sarcoph_genome.fa
+
+## Sequence file path
+## Tasmanian devil circRNA-seq SRA dump — PRJEB34650 (Sarcophilus harrisii, taxid 9305)
+## 38 samples: 37 paired-end (_1/_2) + 1 single-end orphan (ERR3568649)
+## Absolute path on purpose: snakemake resolves relative config paths against the
+## CWD, and the run script cd's into the repo dir.
+readDirectory: /scratch/mike/runs_bsj_finder/2026_tassie_devil_FASTQ
+
+## Separate output tree so PRJEB58914 results in results/ are untouched.
+## (Snakefile reads the 'outdir' key — the dead 'outputDirectory' key is not used.)
+outdir: results_tassie_devil
+
+# Read trimming (fastp) ────────────────────────────────────────────────────
+# PRJEB34650 reads are FIXED-LENGTH 75 bp (37 PE samples); ERR3568649 (SE) is 100 bp.
+# The former pipeline default of 90 exceeded the read length, so fastp discarded
+# all 226M reads per sample ("failed due to too short") while still exiting 0 --
+# every PE sample produced an empty FASTQ and the 2026-09-16 run's 18,561 junctions
+# all came from ERR3568649 alone.
+# 50 keeps the same ~60% of-read-length ratio the 150 bp GBM run uses (90/150),
+# and leaves room for two >=12 bp back-splice arms (min_align_len) after --cut_tail.
+fastp_min_len: 50
+
+# BSJ detection thresholds (Paf_parser.py) ─────────────────────────────────
+min_align_len: 12
+min_mapq: 1
+
+# minimap2 seeding density ─────────────────────────────────────────────────
+# mSarHar1.11 is 3.13 GB -- the same scale as hg38 -- so use the `sr` preset values,
+# as config_gbm.yaml does. Without these keys this config silently inherited the
+# benchmark defaults (11 / 5) from config/config.yaml: dense seeding tuned for a
+# 1.5 Mb toy genome, which on a 3 Gb reference costs a lot of RAM and runtime
+# (minimap2 rebuilds the index per job). The 2026-09-19 results were produced that
+# way and are NOT comparable with the GBM run, which used 21 / 11.
+minimap2_k: 21
+minimap2_w: 11
+
+# SA-tag chimeric detector (sa_detect.py) — read-space arm gap/overlap tolerance
+# read_suffix is NOT consumed anywhere in the pipeline (only referenced in
+# commented-out code in extract_bsj_seq.smk/.py) — not carried over.
+sa_max_read_gap: 20    # max unaligned gap between the two arms (read bp)
+sa_max_read_ovlp: 20   # max arm overlap / microhomology (read bp)
+max_gap_size: 100000
+bsj_flank: 50
+
+# mmseqs2 binary: this host (Xeon E5-2690 v2) has no AVX2, so the bioconda
+# mmseqs2 build dies with SIGILL ("Illegal instruction"). Use the vendored SSE4.1
+# static binary in tools/mmseqs/ instead; the rules then attach no conda env.
+# The pipeline default is false -- this is a property of the machine, not the data.
+mmseqs_static: true
+
+# Cross-sample junction identity ───────────────────────────────────────────
+# Breakpoint slop (bp) within which two cluster members count as the SAME locus,
+# used for the n_loci concordance check in the summary table. Microhomology wobble
+# is typically <=10bp; genuine false merges (paralogs, shared-arm back-splices) are
+# orders of magnitude larger, so 10 separates them cleanly.
+bsj_locus_tol: 10
+
+# MMseqs2 deduplication parameters ─────────────────────────────────────────
+mmseqs_min_seq_id: 0.95
+mmseqs_min_cov: 0.70
+mmseqs_cov_mode: 0
+
+# ── Polishing parameters (bcftools) ────────────────────────────────────────
+polish_min_mapq: 20
+polish_min_match: 75
+bcftools_min_qual: 20
+bcftools_min_dp: 3
+sort_mem: "1G"
