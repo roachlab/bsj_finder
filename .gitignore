@@ -238,3 +238,17 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ── added 2026-09-25 ────────────────────────────────────────────────────────
+# IDE config
+.idea/
+
+# Genome symlinks: absolute paths into /scratch on this host, so committing them
+# would give any clone dangling links. Recreate with:
+#   ln -s /scratch/mike/hg38/genome.fa hg38_genome.fa
+/*_genome.fa
+
+# Ad-hoc QC output (34 MB of cluster tables / fastas). The driver script
+# qc/manual_dedup_all.sh IS tracked.
+qc/manual_dedup/
+qc/pool_dedup/
