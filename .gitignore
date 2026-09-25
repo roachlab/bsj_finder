@@ -17,6 +17,9 @@ samtools.*.tmp.*.bam
 temp/
 test/
 
+# run scripts
+run_*.sh
+
 # fastp writes its report into the working directory
 fastp.html
 fastp.json
