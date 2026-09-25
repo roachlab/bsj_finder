@@ -1,0 +1,71 @@
+## PRJEB58914 -- HUMAN subset, duplicates removed.
+##
+## WHY THIS CONFIG EXISTS
+## PRJEB58914 is a MIXED-SPECIES study. Its BioProject description mentions HeLa, but
+## 14 of the 18 runs downloaded here are Mus musculus. ENA's per-run metadata is
+## correct -- verified empirically by aligning 50k reads/run to hg38 and scoring
+## alignment identity:
+##     human runs : 99.0-99.2% mapped, 93.3-93.9% of alignments at >=97% identity
+##     mouse runs : 53.8-86.5% mapped, 69.5-79.4% at >=97% identity
+## Mapping rate alone is NOT a safe discriminator (one mouse run reaches 86.5%,
+## because mouse reads still align to conserved human sequence); identity separates
+## them with a 14-point gap. Running the mouse runs against hg38 is invalid, which is
+## what results_prjeb58914/ (all 19 samples) did -- treat that tree as void.
+##
+## SAMPLES (4) -- 2 biological replicates x 2 protocols
+##   ERR11757994  CLiPP-Seq   28,609,593 reads  151 bp SE
+##   ERR11757995  CLiPP-Seq   35,903,874 reads  151 bp SE
+##   ERR11757996  CLiPPR-Seq  55,135,047 reads  151 bp SE
+##   ERR11757997  CLiPPR-Seq  45,809,398 reads  151 bp SE
+## ERR11757994/996 were fetched from ENA on 2026-09-24 (md5-verified) after the first
+## 2-sample run; both confirmed human by the same identity test (93.2% / 94.3% of
+## alignments at >=97% identity) and confirmed NOT further duplicates (all four first
+## instrument read IDs differ).
+## Their duplicate ENA deposits (ERR11968312, ERR11968314 -- byte-identical reads
+## resubmitted weeks later under new accessions) are EXCLUDED via a curated symlink
+## directory; including them inflated n_samples to a meaningless 2 for 97.6% of
+## junctions in the all-samples run.
+##
+## READING n_samples: with 2 replicates x 2 protocols it is now interpretable, but
+## check WHICH samples support a junction, not just how many. n_samples == 2 can mean
+## either within-protocol reproducibility (994+995, or 996+997) or cross-protocol
+## concordance (e.g. 995+997); those are different claims. n_samples == 4 is support
+## from both replicates of both protocols.
+genome: hg38_genome.fa
+readDirectory: /scratch/mike/runs_bsj_finder/2026_circRNA_PRJEB58914_fastq/fastq_human_unique
+outdir: results_prjeb58914_human
+
+# Read trimming (fastp) ────────────────────────────────────────────────────
+# Both runs are 151 bp SE (a minority of reads 150). 90 is 60% of 150, the same
+# ratio the GBM run uses, and safely below the read length.
+fastp_min_len: 90
+
+# BSJ detection thresholds ────────────────────────────────────────────────
+min_align_len: 20      # hg38: a 12 bp arm matches a 3 Gb genome by chance
+min_mapq: 1
+
+# minimap2 seeding density ─────────────────────────────────────────────────
+minimap2_k: 21         # `sr` preset values, as for GBM -- 11/5 is benchmark-genome tuning
+minimap2_w: 11
+
+# SA-tag chimeric detector (sa_detect.py) ──────────────────────────────────
+sa_max_read_gap: 20
+sa_max_read_ovlp: 20
+max_gap_size: 1000000  # hg38: 100 kb silently drops circles from long host genes
+bsj_flank: 50
+
+# Cross-sample junction identity ───────────────────────────────────────────
+bsj_locus_tol: 10
+
+# MMseqs2 deduplication ────────────────────────────────────────────────────
+mmseqs_static: true    # this host (Xeon E5-2690 v2) has no AVX2; bioconda build SIGILLs
+mmseqs_min_seq_id: 0.95
+mmseqs_min_cov: 0.70
+mmseqs_cov_mode: 0     # 1 and 2 SEGFAULT the vendored binary -- do not change
+
+# ── Polishing parameters (bcftools) ────────────────────────────────────────
+polish_min_mapq: 20
+polish_min_match: 75
+bcftools_min_qual: 20
+bcftools_min_dp: 3
+sort_mem: "1G"

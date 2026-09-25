@@ -1,0 +1,69 @@
+## PRJEB58914 -- MOUSE subset, duplicates removed.
+##
+## WHY THIS CONFIG EXISTS
+## PRJEB58914 is a MIXED-SPECIES study. Its BioProject description mentions HeLa, but
+## 14 of the 18 runs downloaded here are Mus musculus. ENA's per-run metadata is
+## correct -- verified empirically by aligning 50k reads/run to hg38 and scoring
+## alignment identity:
+##     human runs : 99.0-99.2% mapped, 93.2-94.3% of alignments at >=97% identity
+##     mouse runs : 53.8-86.5% mapped, 69.5-79.4% at >=97% identity
+## Mapping RATE alone is not a safe discriminator (one mouse run reaches 86.5% against
+## hg38, because mouse reads still align to conserved human sequence); identity
+## separates the two groups with a 14-point gap.
+##
+## SAMPLES (8 unique, all 151 bp SE). Their duplicate ENA deposits -- byte-identical
+## reads resubmitted weeks later under new run/experiment/sample accessions -- are
+## EXCLUDED via a curated symlink directory:
+##     ERR10783600  (dup ERR10824094)      ERR11757990  (dup ERR11968307)
+##     ERR10783601  (dup ERR10824095)      ERR11757991  (dup ERR11968308)
+##     ERR10824092  (no duplicate)         ERR11757992  (dup ERR11968309)
+##     ERR10824093  (no duplicate)         ERR11757993  (dup ERR11968310)
+## Including the duplicates made n_samples meaningless: in the all-19-sample run,
+## 23,931 of 23,934 two-sample junctions were one biological sample counted twice.
+##
+## PROTOCOL: sample_title splits these into CLiPP-Seq (ERR10824092, ERR10824093,
+## ERR11757990, ERR11757991) and CLiPPR-Seq (ERR10783600, ERR10783601, ERR11757992,
+## ERR11757993) -- 4 of each. As with the human subset, read WHICH samples support a
+## junction, not just how many: n_samples==2 may be within- or cross-protocol.
+genome: mm39_genome.fa
+readDirectory: /scratch/mike/runs_bsj_finder/2026_circRNA_PRJEB58914_fastq/fastq_mouse_unique
+outdir: results_prjeb58914_mouse
+
+# Read trimming (fastp) ────────────────────────────────────────────────────
+# MEASURED: all 8 runs are 151 bp SE. 90 is 60% of 150, matching the GBM and human
+# configs, and safely below the read length. Setting this at or above the read length
+# makes fastp discard everything and still exit 0 -- that invalidated the 2026-09-16
+# Tasmanian devil run.
+fastp_min_len: 90
+
+# BSJ detection thresholds ────────────────────────────────────────────────
+# mm39 is 2.7 Gb -- the same scale as hg38 -- so use the hg38 settings, not the
+# 1.5 Mb benchmark defaults.
+min_align_len: 20      # a 12 bp arm matches a multi-Gb genome by chance
+min_mapq: 1
+
+# minimap2 seeding density ─────────────────────────────────────────────────
+minimap2_k: 21         # `sr` preset values; 11/5 is benchmark-genome tuning
+minimap2_w: 11
+
+# SA-tag chimeric detector (sa_detect.py) ──────────────────────────────────
+sa_max_read_gap: 20
+sa_max_read_ovlp: 20
+max_gap_size: 1000000  # 100 kb silently drops circles from long host genes
+bsj_flank: 50
+
+# Cross-sample junction identity ───────────────────────────────────────────
+bsj_locus_tol: 10
+
+# MMseqs2 deduplication ────────────────────────────────────────────────────
+mmseqs_static: true    # this host (Xeon E5-2690 v2) has no AVX2; bioconda build SIGILLs
+mmseqs_min_seq_id: 0.95
+mmseqs_min_cov: 0.70
+mmseqs_cov_mode: 0     # 1 and 2 SEGFAULT the vendored binary -- do not change
+
+# ── Polishing parameters (bcftools) ────────────────────────────────────────
+polish_min_mapq: 20
+polish_min_match: 75
+bcftools_min_qual: 20
+bcftools_min_dp: 3
+sort_mem: "1G"

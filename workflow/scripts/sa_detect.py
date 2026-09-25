@@ -135,6 +135,21 @@ def detect(sam_fh, min_anchor=30, min_mapq=1, max_gap_size=100000,
             bsj_read_pos = max(0, a["qe"])
             yield f"{qname}\t{bsj_read_pos}\t{prim['chrom']}\t{left}\t{right}\t{strand}\t{ovl}\n"
 
+HEADER = "q_id\tbsj_coord\tchromosome\ts_start\ts_end\ts_strand\toverlap_trimmed_nt\n"
+
+
+def write_table(sam_fh, out_fh, min_anchor, min_mapq, max_gap_size,
+                max_read_gap, max_read_ovlp):
+    """Stream SAM records in, bsj_cor rows out. Returns the row count."""
+    out_fh.write(HEADER)
+    n = 0
+    for line in detect(sam_fh, min_anchor, min_mapq, max_gap_size,
+                       max_read_gap, max_read_ovlp):
+        out_fh.write(line)
+        n += 1
+    return n
+
+
 def main():
     ap = argparse.ArgumentParser(description="SA-tag BSJ detector for minimap2 SAM")
     ap.add_argument("--sam", default="-", help="SAM file, or '-' for stdin")
@@ -147,16 +162,58 @@ def main():
     a = ap.parse_args()
     fh = sys.stdin if a.sam == "-" else open(a.sam)
     out = sys.stdout if a.out == "-" else open(a.out, "w")
-    out.write("q_id\tbsj_coord\tchromosome\ts_start\ts_end\ts_strand\toverlap_trimmed_nt\n")
     n = 0
     try:
-        for line in detect(fh, a.min_anchor, a.min_mapq, a.max_gap_size,
-                            a.max_read_gap, a.max_read_ovlp):
-            out.write(line); n += 1
+        n = write_table(fh, out, a.min_anchor, a.min_mapq, a.max_gap_size,
+                        a.max_read_gap, a.max_read_ovlp)
     finally:
         if fh is not sys.stdin: fh.close()
         if out is not sys.stdout: out.close()
     sys.stderr.write(f"[sa_detect] {n} BSJ read-support rows\n")
 
-if __name__ == "__main__":
+
+def _from_snakemake(smk):
+    """Run under the `script:` directive.
+
+    The rule used to be a shell pipeline (samtools | python | gzip). The samtools and
+    gzip ends move in here so the file itself is the rule's code -- Snakemake then
+    hashes it, and edits to the detector actually trip the rerun trigger. Streaming is
+    preserved: samtools stays a subprocess whose stdout is consumed lazily, so the SAM
+    is never held in memory.
+
+    -F 0x900 drops secondary/supplementary records. detect() anchors on the primary
+    line and rebuilds the second arm from its SA:Z string, so those records are ~half
+    the BAM and 100% wasted parsing -- but they ARE the second arm, so they stay in the
+    BAM on disk for IGV. samtools comes from the rule's conda env.
+    """
+    import gzip, os, subprocess
+
+    p = smk.params
+    out_path = str(smk.output.tsv)
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+
+    with open(str(smk.log[0]), "w") as log_fh:
+        cmd = ["samtools", "view", "-@", str(smk.threads), "-F", "0x900",
+               str(smk.input.bam)]
+        log_fh.write(f"[sa_detect] {' '.join(cmd)}\n")
+        log_fh.flush()
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=log_fh, text=True)
+        try:
+            with gzip.open(out_path, "wt") as out_fh:
+                n = write_table(proc.stdout, out_fh,
+                                p.min_anchor, p.min_mapq, p.max_gap_size,
+                                p.max_read_gap, p.max_read_ovlp)
+        finally:
+            proc.stdout.close()
+            rc = proc.wait()
+        if rc != 0:
+            # Without this the rule would "succeed" on a truncated BAM: the pipeline's
+            # old `samtools | python` form hid samtools' exit status the same way.
+            raise SystemExit(f"samtools view failed (exit {rc}) -- see {smk.log[0]}")
+        log_fh.write(f"[sa_detect] {n} BSJ read-support rows\n")
+
+
+if "snakemake" in globals():
+    _from_snakemake(globals()["snakemake"])   # noqa: F821  (injected by script:)
+elif __name__ == "__main__":
     main()

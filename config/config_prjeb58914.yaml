@@ -1,0 +1,74 @@
+## Reference genome file path
+## Human hg38 (GRCh38) — /scratch/mike/hg38/genome.fa, symlinked into the repo root.
+## Confirmed against the previous run's alignment logs, which record
+## `minimap2 -ax sr ... /home/mike/scratch/hg38/genome.fa`.
+genome: hg38_genome.fa
+
+## Sequence file path
+## PRJEB58914 circRNA-seq — 19 samples: 1 paired-end (ERR10183985, 2x250 bp) and
+## 18 single-end (151 bp, NextSeq 550). ~39 GB total.
+##
+## WARNING -- 8 of the 19 are DUPLICATE DEPOSITS of another 8, the same sequencing
+## runs under a second ENA accession (identical instrument read IDs, e.g.
+## NB551648:128:HK5NKBGXG:1:11101:21578:1082 in both ERR11757990 and ERR11968307):
+##     ERR10783600=ERR10824094   ERR11757990=ERR11968307   ERR11757993=ERR11968310
+##     ERR10783601=ERR10824095   ERR11757991=ERR11968308   ERR11757995=ERR11968312
+##     ERR11757992=ERR11968309   ERR11757997=ERR11968314
+## Only ERR10183985, ERR10824092 and ERR10824093 are unpaired singletons.
+## Running all 19 doubles the work for those 8 and, more importantly, INFLATES
+## n_samples in the summary table -- one biological sample is counted twice. Point
+## readDirectory at a curated directory of the 11 unique samples before drawing any
+## cross-sample conclusion.
+##
+## Absolute path on purpose: snakemake resolves relative config paths against the
+## CWD, and the run script cd's into the repo dir.
+readDirectory: /scratch/mike/runs_bsj_finder/2026_circRNA_PRJEB58914_fastq/fastq
+
+## Separate output tree, so results_gbm/ and results_tassie_devil/ are untouched.
+## Previous tree (43 GB, 23,680 summary rows) was deleted 2026-09-21; this is a
+## from-scratch run under the current pipeline.
+outdir: results_prjeb58914
+
+# Read trimming (fastp) ────────────────────────────────────────────────────
+# MEASURED, not assumed: the 18 SE samples are 151 bp (a minority of reads 150),
+# and the one PE sample is 2x250. 90 is 60% of 150 -- the same ratio the GBM run
+# uses -- and is safely below the shortest library. Setting this at or above the
+# read length makes fastp silently discard everything and still exit 0; that is
+# what invalidated the 2026-09-16 Tasmanian devil run.
+fastp_min_len: 90
+
+# BSJ detection thresholds ────────────────────────────────────────────────
+min_align_len: 20      # hg38: a 12 bp arm matches a 3 Gb genome by chance
+min_mapq: 1
+
+# minimap2 seeding density ─────────────────────────────────────────────────
+# `sr` preset values, as for GBM. The previous run used the pipeline default of
+# 11/5 -- seeding tuned for the 1.5 Mb benchmark genome -- which on hg38 is both
+# expensive and over-sensitive. Its results are therefore not comparable with this
+# one, independently of everything else that has changed.
+minimap2_k: 21
+minimap2_w: 11
+
+# SA-tag chimeric detector (sa_detect.py) — read-space arm gap/overlap tolerance
+sa_max_read_gap: 20    # max unaligned gap between the two arms (read bp)
+sa_max_read_ovlp: 20   # max arm overlap / microhomology (read bp)
+max_gap_size: 1000000  # hg38: 100 kb silently drops circles from long host genes
+bsj_flank: 50
+
+# Cross-sample junction identity ───────────────────────────────────────────
+bsj_locus_tol: 10
+
+# MMseqs2 deduplication parameters ─────────────────────────────────────────
+# mmseqs2 binary: this host (Xeon E5-2690 v2) has no AVX2, so the bioconda build
+# dies with SIGILL. Use the vendored SSE4.1 static binary in tools/mmseqs/.
+mmseqs_static: true
+mmseqs_min_seq_id: 0.95
+mmseqs_min_cov: 0.70
+mmseqs_cov_mode: 0
+
+# ── Polishing parameters (bcftools) ────────────────────────────────────────
+polish_min_mapq: 20
+polish_min_match: 75
+bcftools_min_qual: 20
+bcftools_min_dp: 3
+sort_mem: "1G"

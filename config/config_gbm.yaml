@@ -1,0 +1,75 @@
+## Reference genome file path
+## Human hg38 (GRCh38) — /scratch/mike/hg38/genome.fa (3.15 GB, .fai present)
+## Symlink in repo root: hg38_genome.fa -> /scratch/mike/hg38/genome.fa
+## (Same pattern as the Tassie devil run's sarcoph_genome.fa symlink.)
+genome: hg38_genome.fa
+
+## Sequence file path
+## GBM glioblastoma circRNA-seq dataset — 20 paired-end samples
+## (16 tumor: 61,150,154,158,160,169,170,172,179,190,203,207,213,214,217,267
+##  + 4 MC_NOR controls: 61_MC_NOR, 158_MC_NOR, 170_MC_NOR, 267_MC_NOR)
+## 150 bp Illumina NovaSeq reads (~80 GB total).
+## Absolute path on purpose: snakemake resolves relative config paths against the
+## CWD, and the run script cd's into the repo dir.
+readDirectory: /scratch/mike/runs_bsj_finder/GBM/fastq_circ
+
+## Separate output tree so the Tassie devil run (results_tassie_devil/) is
+## untouched.
+##
+## RERUN HISTORY
+## 2026-09-21: full run after results_gbm/ was deleted to reclaim scratch space.
+##   Also necessary because the 2026-09-17 results predated the paired/single-end
+##   trim split and the 2026-09-18 minimap2_alig / extract_bsj_seq /
+##   polished_bsj_seq changes.
+## 2026-09-23: full rerun again -- see run_gbm.sh for the itemised list. In short:
+##   polishing now uses only the BSJ-supporting reads, the summary table's n_samples
+##   was being computed from an inverted join and is fixed, and it gains an n_loci
+##   concordance column. Results from 2026-09-21 are NOT comparable on any of the
+##   polished_*, pool_* or summary outputs.
+outdir: results_gbm
+
+# Read trimming (fastp) ────────────────────────────────────────────────────
+# GBM reads are 150 bp NovaSeq, so 90 (60% of read length) is comfortable.
+fastp_min_len: 90
+
+# BSJ detection thresholds ────────────────────────────────────────────────
+min_align_len: 20      # hg38: raised from the benchmark's 12 -- a 12 bp arm matches a 3 Gb genome by chance
+min_mapq: 1
+
+# minimap2 seeding density ─────────────────────────────────────────────────
+# `sr` preset defaults. The pipeline default (11 / 5) is far denser and is tuned for the
+# 1.5 Mb benchmark genome; on hg38 it makes the per-job index very large (minimap2 rebuilds
+# it for every sample) and risks OOM at 5 concurrent align jobs.
+minimap2_k: 21
+minimap2_w: 11
+
+# SA-tag chimeric detector (sa_detect.py) — read-space arm gap/overlap tolerance
+sa_max_read_gap: 20    # max unaligned gap between the two arms (read bp)
+sa_max_read_ovlp: 20   # max arm overlap / microhomology (read bp)
+max_gap_size: 1000000  # hg38: 100 kb silently drops circles from long host genes
+bsj_flank: 50
+
+# mmseqs2 binary: this host (Xeon E5-2690 v2) has no AVX2, so the bioconda
+# mmseqs2 build dies with SIGILL ("Illegal instruction"). Use the vendored SSE4.1
+# static binary in tools/mmseqs/ instead; the rules then attach no conda env.
+# The pipeline default is false -- this is a property of the machine, not the data.
+mmseqs_static: true
+
+# Cross-sample junction identity ───────────────────────────────────────────
+# Breakpoint slop (bp) within which two cluster members count as the SAME locus,
+# used for the n_loci concordance check in the summary table. Microhomology wobble
+# is typically <=10bp; genuine false merges (paralogs, shared-arm back-splices) are
+# orders of magnitude larger, so 10 separates them cleanly.
+bsj_locus_tol: 10
+
+# MMseqs2 deduplication parameters ─────────────────────────────────────────
+mmseqs_min_seq_id: 0.95
+mmseqs_min_cov: 0.70
+mmseqs_cov_mode: 0
+
+# ── Polishing parameters (bcftools) ────────────────────────────────────────
+polish_min_mapq: 20
+polish_min_match: 75
+bcftools_min_qual: 20
+bcftools_min_dp: 3
+sort_mem: "1G"

@@ -5,7 +5,13 @@ import os
 import re
 from metasnek import fastq_finder
 
-configfile: os.path.join("config", "config.yaml")
+# Resolved against the Snakefile, NOT the working directory. A bare
+# os.path.join("config", "config.yaml") is CWD-relative, so any run with
+# `-d <dir>` outside the repo dies at parse time with "Workflow defines configfile
+# config/config.yaml but it is not present or accessible" -- which is what forces
+# every invocation to happen from the repo root. (READ_DIR below is normalised the
+# same way.)
+configfile: os.path.join(workflow.basedir, "config", "config.yaml")
 
 out_dir = config.get("outdir", "results")
 
@@ -65,7 +71,8 @@ def renamed_reads(wildcards):
 
     Every consumer of R2/RS must go through this, or temp() would free them as soon
     as the last rule Snakemake KNOWS about finishes -- while a later rule still
-    needs them.
+    needs them. Current consumers: minimap2_alig and extract_bsj_seq. (polished_bsj_seq
+    dropped out when it switched to reading BSJ reads from the alignment BAM.)
     """
     base = os.path.join(out_dir, "trim_results", wildcards.sample)
     reads = {"r1": f"{base}_R1_trim_rename.fastq.gz"}

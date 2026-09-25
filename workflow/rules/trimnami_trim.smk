@@ -10,10 +10,12 @@
 # Every output here is temp(): both the fastp files and the renamed copies are
 # intermediates, and on a full-size run they dwarf the results that are actually
 # kept (~200 GB for the 38-sample PRJEB34650 set). The renamed reads are freed once
-# polished_bsj_seq -- their last consumer -- has run for that sample; the fastp
-# files go as soon as the rename rule has. Because they are temp, re-running any
-# downstream step later re-trims from the source FASTQs. Pass --notemp to keep
-# them for a run where you want to inspect the trimmed reads.
+# extract_bsj_seq -- their last consumer -- has run for that sample; the fastp files
+# go as soon as the rename rule has. (polished_bsj_seq used to hold them to the very
+# end of the DAG; it now reads the BSJ reads back out of the alignment BAM instead,
+# so re-running polish or anything downstream of it no longer forces a re-trim.)
+# Because they are temp, re-running the EARLY steps still re-trims from the source
+# FASTQs. Pass --notemp to keep them for a run where you want to inspect them.
 #
 # fastp flags are identical across the two beyond the pairing-specific ones
 # (-I/-O/--unpaired*/--detect_adapter_for_pe). Keep them in sync.

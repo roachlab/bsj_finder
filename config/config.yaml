@@ -16,12 +16,7 @@ fastp_min_len: 90
 
 # BSJ detection thresholds (Paf_parser.py) ─────────────────────────────────
 min_align_len: 12
-min_align_frac: 0.35
-max_bsj_gap: -3
-max_bsj_ovlp: 15
-min_pident: 0.95
 min_mapq: 1
-valid_coord_dist: 10
 
 # minimap2 seeding density ────────────────────────────────────────────────
 # Dense seeding surfaces very short back-splice arms (needed on the small benchmark
@@ -41,6 +36,13 @@ read_suffix: "/1"
 # Leave false unless the host CPU lacks AVX2 -- the bioconda mmseqs2 package is
 # AVX2-compiled and dies with SIGILL there. See the Snakefile for details.
 mmseqs_static: false
+
+# Cross-sample junction identity ───────────────────────────────────────────
+# Breakpoint slop (bp) within which two cluster members count as the SAME locus,
+# used for the n_loci concordance check in the summary table. Microhomology wobble
+# is typically <=10bp; genuine false merges (paralogs, shared-arm back-splices) are
+# orders of magnitude larger, so 10 separates them cleanly.
+bsj_locus_tol: 10
 
 # MMseqs2 deduplication parameters ─────────────────────────────────────────
 mmseqs_min_seq_id: 0.95
