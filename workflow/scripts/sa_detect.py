@@ -54,6 +54,7 @@ def seg_from(chrom, pos1, strand, cig, mapq):
     return dict(chrom=chrom, strand=strand, rs=rs, re=re_, qs=q_start, qe=q_end, mapq=mapq)
 
 def detect(sam_fh, min_anchor=30, min_mapq=1, max_gap_size=100000,
+           strandedness="unstranded",
            max_read_gap=15, max_read_ovlp=15):
     for ln in sam_fh:
         if ln.startswith("@"):
@@ -133,18 +134,25 @@ def detect(sam_fh, min_anchor=30, min_mapq=1, max_gap_size=100000,
             # read-space position of the junction (end of the first arm), used by the
             # downstream extract_bsj_seq step to window the read around the BSJ.
             bsj_read_pos = max(0, a["qe"])
-            yield f"{qname}\t{bsj_read_pos}\t{prim['chrom']}\t{left}\t{right}\t{strand}\t{ovl}\n"
+            # `strand` so far is the ALIGNMENT strand of the read. For a reverse-stranded
+            # library (dUTP / TruSeq Stranded) R1 is antisense to the transcript, so the
+            # junction's real strand is the opposite. R2 is reverse-complemented upstream
+            # in rename_read_ids_pe, so both mates arrive in R1's orientation and one flip
+            # is correct for all of them. forward: already the transcript strand.
+            # unstranded: left as aligned -- not meaningful, see the Snakefile.
+            out_strand = ("-" if strand == "+" else "+") if strandedness == "reverse" else strand
+            yield f"{qname}\t{bsj_read_pos}\t{prim['chrom']}\t{left}\t{right}\t{out_strand}\t{ovl}\n"
 
 HEADER = "q_id\tbsj_coord\tchromosome\ts_start\ts_end\ts_strand\toverlap_trimmed_nt\n"
 
 
 def write_table(sam_fh, out_fh, min_anchor, min_mapq, max_gap_size,
-                max_read_gap, max_read_ovlp):
+                max_read_gap, max_read_ovlp, strandedness="unstranded"):
     """Stream SAM records in, bsj_cor rows out. Returns the row count."""
     out_fh.write(HEADER)
     n = 0
     for line in detect(sam_fh, min_anchor, min_mapq, max_gap_size,
-                       max_read_gap, max_read_ovlp):
+                       strandedness, max_read_gap, max_read_ovlp):
         out_fh.write(line)
         n += 1
     return n
@@ -159,17 +167,39 @@ def main():
     ap.add_argument("--max-gap-size", type=int, default=100000)
     ap.add_argument("--max-read-gap", type=int, default=15)
     ap.add_argument("--max-read-ovlp", type=int, default=15)
+    ap.add_argument("--strandedness", default="unstranded",
+                    help="forward|reverse|unstranded, or a detect_strandedness TSV path. "
+                         "reverse flips the junction strand (R1 antisense; dUTP/TruSeq)")
     a = ap.parse_args()
     fh = sys.stdin if a.sam == "-" else open(a.sam)
     out = sys.stdout if a.out == "-" else open(a.out, "w")
     n = 0
     try:
         n = write_table(fh, out, a.min_anchor, a.min_mapq, a.max_gap_size,
-                        a.max_read_gap, a.max_read_ovlp)
+                        a.max_read_gap, a.max_read_ovlp,
+                        resolve_strandedness(a.strandedness))
     finally:
         if fh is not sys.stdin: fh.close()
         if out is not sys.stdout: out.close()
     sys.stderr.write(f"[sa_detect] {n} BSJ read-support rows\n")
+
+
+def resolve_strandedness(value):
+    """Accept a literal (forward/reverse/unstranded) or a detect_strandedness TSV.
+
+    The verdict has to arrive as an INPUT FILE rather than a param: Snakemake resolves
+    params during DAG construction, before detect_strandedness has run, so a param
+    could never carry a value another rule computes.
+    """
+    if value in ("forward", "reverse", "unstranded"):
+        return value
+    with open(value) as fh:
+        header = fh.readline().rstrip("\n").split("\t")
+        row = fh.readline().rstrip("\n").split("\t")
+    verdict = dict(zip(header, row))["verdict"]
+    if verdict not in ("forward", "reverse", "unstranded"):
+        raise SystemExit(f"unusable strandedness verdict {verdict!r} in {value}")
+    return verdict
 
 
 def _from_snakemake(smk):
@@ -189,6 +219,7 @@ def _from_snakemake(smk):
     import gzip, os, subprocess
 
     p = smk.params
+    strandedness = resolve_strandedness(str(smk.input.strandedness))
     out_path = str(smk.output.tsv)
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
 
@@ -196,13 +227,15 @@ def _from_snakemake(smk):
         cmd = ["samtools", "view", "-@", str(smk.threads), "-F", "0x900",
                str(smk.input.bam)]
         log_fh.write(f"[sa_detect] {' '.join(cmd)}\n")
+        log_fh.write(f"[sa_detect] strandedness: {strandedness}"
+                     f"{' (junction strand flipped)' if strandedness == 'reverse' else ''}\n")
         log_fh.flush()
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=log_fh, text=True)
         try:
             with gzip.open(out_path, "wt") as out_fh:
                 n = write_table(proc.stdout, out_fh,
                                 p.min_anchor, p.min_mapq, p.max_gap_size,
-                                p.max_read_gap, p.max_read_ovlp)
+                                p.max_read_gap, p.max_read_ovlp, strandedness)
         finally:
             proc.stdout.close()
             rc = proc.wait()

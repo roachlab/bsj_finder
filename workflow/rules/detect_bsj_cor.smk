@@ -20,7 +20,10 @@
 
 rule detect_bsj_cor:
     input:
-        bam = os.path.join(out_dir, "align_results", "{sample}.bam")
+        bam = os.path.join(out_dir, "align_results", "{sample}.bam"),
+        # An INPUT, not a param: params are resolved during DAG construction, before
+        # detect_strandedness has run, so they cannot carry a computed verdict.
+        strandedness = os.path.join(out_dir, "qc_results", "{sample}.strandedness.tsv")
 
     output:
         tsv = os.path.join(out_dir, "bsj_results", "{sample}.bsj_cor.tsv.gz")

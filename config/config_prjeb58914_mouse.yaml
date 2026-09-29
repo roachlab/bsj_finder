@@ -36,6 +36,13 @@ outdir: results_prjeb58914_mouse
 # Tasmanian devil run.
 fastp_min_len: 90
 
+# Library strandedness ────────────────────────────────────────────────────
+# auto = detect_strandedness measures it PER SAMPLE from the reads and the reference
+# (ts:A splice-motif orientation of R1; no annotation needed) and refuses to guess if
+# the signal is weak or ambiguous. Set a literal value instead to ASSERT one: the
+# detection still runs and the run fails if the reads disagree.
+library_strandedness: auto
+
 # BSJ detection thresholds ────────────────────────────────────────────────
 # mm39 is 2.7 Gb -- the same scale as hg38 -- so use the hg38 settings, not the
 # 1.5 Mb benchmark defaults.

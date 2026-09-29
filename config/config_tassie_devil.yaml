@@ -25,6 +25,17 @@ outdir: results_tassie_devil
 # and leaves room for two >=12 bp back-splice arms (min_align_len) after --cut_tail.
 fastp_min_len: 50
 
+# Library strandedness ────────────────────────────────────────────────────
+# reverse = R1 antisense (dUTP / TruSeq Stranded). The junction strand is flipped;
+# without it every junction is reported on the wrong strand. Confirmed two ways on
+# GBM sample 150: minimap2 ts:A splice-motif orientation (R1 96.2% antisense) and
+# exonic reads vs GENCODE v44 gene strand (R1 97.2% antisense).
+# Left as a literal rather than `auto` so it acts as an ASSERTION: detect_strandedness
+# still runs per sample and the run FAILS if any sample disagrees.
+# NB R2 is reverse-complemented for ALL paired samples regardless of this setting --
+# see the LIBRARY STRANDEDNESS block in the Snakefile.
+library_strandedness: reverse
+
 # BSJ detection thresholds (Paf_parser.py) ─────────────────────────────────
 min_align_len: 12
 min_mapq: 1

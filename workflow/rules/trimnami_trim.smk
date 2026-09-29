@@ -139,7 +139,16 @@ rule rename_read_ids_pe:
     shell:
         """
         seqtk rename {input.r1}     '{wildcards.sample}.1.' | gzip -1 - > {output.r1}
-        seqtk rename {input.r2}     '{wildcards.sample}.2.' | gzip -1 - > {output.r2}
+        # R2 is REVERSE-COMPLEMENTED (seqtk seq -r) before renaming. Reads are aligned
+        # single-end, so without this an FR fragment's mates land on opposite strands
+        # and one junction is reported twice, once per strand, with its support split.
+        # See the LIBRARY STRANDEDNESS block in the Snakefile for the measurements.
+        # This is orientation-only: the read keeps its identity and its quality string
+        # is reversed with it, so downstream polishing is unaffected.
+        seqtk seq -r {input.r2} | seqtk rename - '{wildcards.sample}.2.' | gzip -1 - > {output.r2}
+        # Orphans are NOT reverse-complemented: fastp merges unpaired R1s and R2s into
+        # one file, so their original mate is unknowable here. They are a small residual
+        # source of strand conflict -- on the devil set, ~1% of bsj_cor rows.
         seqtk rename {input.orphan} '{wildcards.sample}.S.' | gzip -1 - > {output.orphan}
         """
 
