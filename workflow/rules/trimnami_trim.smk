@@ -138,6 +138,13 @@ rule rename_read_ids_pe:
         os.path.join("logs", "rename_read_ids.{sample}.log")
     shell:
         """
+        # Without pipefail a failure inside `seqtk ... | gzip > out` is invisible: the
+        # redirect still creates the file, the rule "succeeds", and a truncated or empty
+        # FASTQ flows downstream. The log: directive was also declared but never written
+        # to, so any stderr was discarded.
+        set -euo pipefail
+        exec 2>> {log}
+
         seqtk rename {input.r1}     '{wildcards.sample}.1.' | gzip -1 - > {output.r1}
         # R2 is REVERSE-COMPLEMENTED (seqtk seq -r) before renaming. Reads are aligned
         # single-end, so without this an FR fragment's mates land on opposite strands
@@ -166,5 +173,8 @@ rule rename_read_ids_se:
         os.path.join("logs", "rename_read_ids.{sample}.log")
     shell:
         """
+        set -euo pipefail
+        exec 2>> {log}
+
         seqtk rename {input.r1} '{wildcards.sample}.1.' | gzip -1 - > {output.r1}
         """
