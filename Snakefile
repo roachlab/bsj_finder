@@ -33,6 +33,31 @@ if not samples:
 SAMPLES = sorted(samples.keys())
 print(f"Samples detected ({len(SAMPLES)}): {SAMPLES}")
 
+# ─────────────────────────────────────────────────────────────────────────────
+# SAMPLE EXCLUSION
+#
+# Drop named samples without touching readDirectory. Excluding via a curated
+# symlink directory (as the PRJEB58914 subsets do) would change every remaining
+# sample's INPUT PATH, which is a Snakemake rerun trigger -- so a purely
+# bookkeeping change would discard all banked alignment work. Naming them here
+# leaves the paths identical and the existing outputs valid.
+#
+# The reason for each exclusion belongs in the config next to the name.
+# ─────────────────────────────────────────────────────────────────────────────
+EXCLUDE = set(config.get("exclude_samples") or [])
+if EXCLUDE:
+    unknown = EXCLUDE - set(SAMPLES)
+    if unknown:
+        # A typo here would silently exclude nothing, so fail instead.
+        raise ValueError(
+            f"exclude_samples names {sorted(unknown)}, which are not in {READ_DIR}. "
+            f"Known samples: {SAMPLES}"
+        )
+    SAMPLES = [s for s in SAMPLES if s not in EXCLUDE]
+    print(f"  excluded {len(EXCLUDE)}: {sorted(EXCLUDE)} -> {len(SAMPLES)} samples remain")
+    if not SAMPLES:
+        raise ValueError("exclude_samples removed every sample")
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PAIRED-END / SINGLE-END PARTITION

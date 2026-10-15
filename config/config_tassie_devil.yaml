@@ -15,6 +15,29 @@ readDirectory: /scratch/mike/runs_bsj_finder/2026_tassie_devil_FASTQ
 ## (Snakefile reads the 'outdir' key — the dead 'outputDirectory' key is not used.)
 outdir: results_tassie_devil
 
+# Excluded samples ────────────────────────────────────────────────────────
+# Both fail a mapping-rate check against mSarHar1.11. Measured 2026-10-01 on 50k
+# reads per sample: the other 36 sit at 96.3-99.1%, with one at 87.2%.
+#
+#   ERR3568437 (pancreas.2)   4.5% mapped -- 96% of its reads are not devil.
+#       GC 51.7% vs ~41% for healthy samples; only 98 spliced reads in 500k
+#       (vs 1,897-3,294 elsewhere), which is what first exposed it. Raising the
+#       subsample 10x added ONE spliced read, so it is contamination, not sampling.
+#   ERR3568649 (fibroblast.1) 29.9% mapped -- Illumina Genome Analyzer IIx, an
+#       instrument from ~2010. Single-end, 36M reads, and genuinely UNSTRANDED
+#       (500k reads gave 52,053 with ts:A, split 25,849/26,204 = 50.3%), since
+#       non-directional protocols were standard in that era. Not comparable with
+#       the HiSeq 4000 reverse-stranded libraries that make up the rest.
+#
+# Removing ERR3568649 also makes the set homogeneous: all 36 remaining samples are
+# paired-end HiSeq 4000, and all 31 measured so far came out `reverse`.
+# library_strandedness stays `auto` regardless -- a declared value would halt the
+# whole run on one disagreeing sample, and `auto` still records every verdict in
+# qc_results/ for audit, which is where the ERR3568649 finding came from.
+exclude_samples:
+  - ERR3568437
+  - ERR3568649
+
 # Read trimming (fastp) ────────────────────────────────────────────────────
 # PRJEB34650 reads are FIXED-LENGTH 75 bp (37 PE samples); ERR3568649 (SE) is 100 bp.
 # The former pipeline default of 90 exceeded the read length, so fastp discarded
@@ -34,9 +57,41 @@ fastp_min_len: 50
 # still runs per sample and the run FAILS if any sample disagrees.
 # NB R2 is reverse-complemented for ALL paired samples regardless of this setting --
 # see the LIBRARY STRANDEDNESS block in the Snakefile.
-library_strandedness: reverse
+# 2026-09-30: `auto`, not `reverse`, because THIS DATASET IS MIXED. The 37 paired-end
+# samples are reverse-stranded, but the single-end ERR3568649 is genuinely unstranded:
+# 500k reads gave 52,053 with a ts:A tag, split +25,849 / -26,204 (50.3% antisense).
+# That is a large, unambiguous measurement, not a weak signal. ERR3568649 is a separate
+# single-end library from a different submission, so a different protocol is plausible.
+#
+# Declaring `reverse` made the run fail on that one sample, which is the assertion doing
+# its job. `auto` lets each sample carry its own verdict -- detect_bsj_cor takes the
+# per-sample verdict file as an input, so the mix is handled correctly.
+#
+# CAVEAT: for ERR3568649 the strand column is NOT meaningful, and +/- duplicate rows
+# will persist for it (R1 orientation is random per fragment, so reverse-complementing
+# R2 cannot collapse them). Affects 1 of 38 samples; see the Snakefile block.
+library_strandedness: auto
+
+# 2026-09-30: raised from the 50,000 default. ERR3568437 yielded only 97 spliced
+# reads with a ts:A tag in the first 50k (below the 200 minimum) and halted the run,
+# even though its direction was unambiguous (+1 / -96 = 99% antisense) and every
+# other devil sample gave 1,897-3,294. The sample is healthy -- 193.6M reads passed
+# fastp, comparable to its neighbours -- it simply has less linear splicing in the
+# reads sampled.
+#
+# NB detect_strandedness reads the FIRST n reads, not a random sample, and the head
+# of a FASTQ is one flowcell tile and so not representative. Raising n both increases
+# the spliced yield and spreads the sample over more tiles. 500k gives ERR3568437
+# roughly 970 spliced reads, well clear of the threshold.
+strandedness_reads: 500000
 
 # BSJ detection thresholds (Paf_parser.py) ─────────────────────────────────
+# Deliberately 12, NOT the 20 used by the hg38/mm39 configs. Those raise it because a
+# 12 bp arm matches a 3 Gb genome by chance, and mSarHar1.11 is 3.09 Gb -- but these
+# reads are 75 bp, not 150. The median primary arm here is 42 bp (vs 89 bp for GBM), so
+# a 20 bp floor on BOTH arms costs far more sensitivity than it does on longer reads.
+# Measured: this dataset yields 0.27% junctions per SA record against GBM's 7.17%, and
+# that is already WITH the lenient anchor.
 min_align_len: 12
 min_mapq: 1
 
@@ -55,7 +110,16 @@ minimap2_w: 11
 # commented-out code in extract_bsj_seq.smk/.py) — not carried over.
 sa_max_read_gap: 20    # max unaligned gap between the two arms (read bp)
 sa_max_read_ovlp: 20   # max arm overlap / microhomology (read bp)
-max_gap_size: 100000
+# 2026-10-01: raised from 100000. 100 kb silently DROPS circles from long host genes,
+# and the previous run showed the cap biting: 954 junctions (0.18%) had spans >90 kb,
+# piled against the ceiling. Devil genes are comparable in span to human ones, so this
+# matches the hg38/mm39 configs.
+#
+# NB an identical change was made on 2026-09-25 but was lost when the working tree was
+# reverted by a `git checkout main` + fast-forward merge while the edits were still
+# uncommitted. The 2026-10-01 run (501,227 junctions) therefore ran at 100000, not the
+# 1000000 reported at the time.
+max_gap_size: 1000000
 bsj_flank: 50
 
 # mmseqs2 binary: this host (Xeon E5-2690 v2) has no AVX2, so the bioconda

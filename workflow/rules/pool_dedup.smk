@@ -188,6 +188,7 @@ rule bsj_summary_table:
         os.path.join("logs", "bsj_summary_table.log")
     params:
         locus_tol = config.get("bsj_locus_tol", 10),
+        min_reads = config.get("bsj_min_reads", 1),
     # Stdlib-only script (like sa_detect.py) -- no conda env required, so it runs under
     # Snakemake's own interpreter.
     #

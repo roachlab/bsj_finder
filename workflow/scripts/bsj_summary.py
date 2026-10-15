@@ -27,6 +27,23 @@ discriminator, hence this check.
 cluster no longer credits one locus with reads from another. For n_loci == 1 rows this
 is identical to counting every member.
 
+`n_reads` is how many cluster members (i.e. supporting reads) are concordant with
+the row's own coordinate -- the same members n_samples is counted over. `min_reads`
+drops rows below a threshold.
+
+Why it exists: a junction seen once is weak evidence, and single-read calls are also
+what populate the residual +/- strand duplicates. Measured on the Tasmanian devil
+set, 90.9% of coordinates appearing on both strands involve no orphan reads, and
+86.8% of THOSE have exactly one read on the minority strand against a median of 13
+on the other. Those are not two junctions; they are one shallow observation reported
+twice. The effect is worst where detection yield is low: 75 bp devil reads yield
+0.27% junctions per SA record against 7.17% for 150 bp GBM reads, because a 75 bp
+read must carry the junction between positions 20 and 55 for both arms to clear
+min_align_len=20.
+
+Default is 1 (report everything), so enabling the filter is an explicit per-dataset
+choice rather than a silent change to the catalogue.
+
 A row is keyed on the 4-field coordinate (chromosome, s_start, s_end, s_strand)
 ONLY. `overlap_trimmed_nt` is a property of the supporting READ -- how much
 microhomology sa_detect.py consumed to place that read's breakpoint -- not of the
@@ -94,7 +111,7 @@ def group_loci(coords, tol):
     return groups
 
 
-def main(cor, pool_fasta, pool_cluster, out, locus_tol=10):
+def main(cor, pool_fasta, pool_cluster, out, locus_tol=10, min_reads=1):
     """cor: list of per-sample bsj_cor.tsv.gz; the rest are single paths."""
 
     # ── 1) Index bsj_cor: (q_id, bsj_coord) -> (chrom, s_start, s_end, s_strand, overlap) ──
@@ -180,26 +197,38 @@ def main(cor, pool_fasta, pool_cluster, out, locus_tol=10):
     # ── 4) Write summary table ──────────────────────────────────────────────────
     tol = locus_tol
     n_discordant = 0
+    n_filtered = 0
     with open(out, "w") as fo:
-        fo.write("chromosome\ts_start\ts_end\ts_strand\toverlap_trimmed_nt\tn_samples\tn_loci\n")
+        fo.write("chromosome\ts_start\ts_end\ts_strand\toverlap_trimmed_nt\t"
+                 "n_reads\tn_samples\tn_loci\n")
         for row in sorted(rows, key=lambda r: (chrom_key(r[0]), int(r[1]), int(r[2]))):
             this = (row[0], as_int(row[1]), as_int(row[2]), row[3])
             samples = set()
             member_coords = set()
+            n_reads = 0
             for rep in rows[row]:
                 for coord, sample in support.get(rep, ()):
                     if coord is None:
                         samples.add(sample)      # unresolvable: keep, do not penalise
+                        n_reads += 1
                         continue
                     member_coords.add(coord)
                     if same_locus(coord, this, tol):
                         samples.add(sample)
+                        n_reads += 1             # counted over the SAME members as n_samples
+            if n_reads < min_reads:
+                n_filtered += 1
+                continue
             n_loci = len(group_loci(member_coords, tol)) if member_coords else 1
             if n_loci > 1:
                 n_discordant += 1
             ovl = max(overlaps[row])
-            fo.write(f"{row[0]}\t{row[1]}\t{row[2]}\t{row[3]}\t{ovl}\t{len(samples)}\t{n_loci}\n")
+            fo.write(f"{row[0]}\t{row[1]}\t{row[2]}\t{row[3]}\t{ovl}\t"
+                     f"{n_reads}\t{len(samples)}\t{n_loci}\n")
 
+    if min_reads > 1:
+        logging.info(f"rows dropped by min_reads={min_reads}: {n_filtered:,} "
+                     f"({100*n_filtered/max(len(rows),1):.2f}% of {len(rows):,})")
     logging.info(f"rows whose cluster spans >1 locus (n_loci>1, tol={tol}bp): {n_discordant:,} "
                  f"({100*n_discordant/max(len(rows),1):.2f}%) -- their n_samples counts only "
                  f"concordant members")
@@ -215,13 +244,16 @@ def _from_cli():
     ap.add_argument("--pool-fasta", required=True, help="pool dedup representative fasta")
     ap.add_argument("--pool-cluster", required=True, help="pool dedup cluster tsv")
     ap.add_argument("--out", required=True, help="output summary tsv")
+    ap.add_argument("--min-reads", type=int, default=1,
+                    help="drop junctions with fewer than this many concordant supporting "
+                         "reads (default 1 = no filtering)")
     ap.add_argument("--locus-tol", type=int, default=10,
                     help="breakpoint slop (bp) within which two member coordinates are "
                          "the same locus (default 10; microhomology wobble is typically "
                          "<=10bp, real false merges are far larger)")
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    main(a.cor, a.pool_fasta, a.pool_cluster, a.out, a.locus_tol)
+    main(a.cor, a.pool_fasta, a.pool_cluster, a.out, a.locus_tol, a.min_reads)
 
 
 # Snakemake's `script:` directive injects a `snakemake` object into the module globals
@@ -239,6 +271,7 @@ if "snakemake" in globals():
         pool_cluster=str(snakemake.input.pool_cluster),
         out=str(snakemake.output.tsv),
         locus_tol=int(snakemake.params.locus_tol),
+        min_reads=int(snakemake.params.min_reads),
     )
 elif __name__ == "__main__":
     _from_cli()
