@@ -1,7 +1,7 @@
 # Detect back-splice junctions from the minimap2 BAM using the SA-tag / soft-clip parser.
 # Consumes the unsorted, SA-filtered BAM from minimap2_alig and emits one row per
 # supporting read in the bsj_cor schema (q_id, bsj_coord, chromosome, s_start, s_end,
-# s_strand, overlap_trimmed_nt) consumed by extract_bsj_seq. sa_detect.py is stdlib-only
+# s_strand, overlap_trimmed_nt, mapq) consumed by extract_bsj_seq. sa_detect.py is stdlib-only
 # and reads SAM text on stdin, so samtools streams the BAM back out as SAM for it; the
 # shared minimap2 env supplies samtools.
 #

@@ -12,7 +12,9 @@ chromosome and strand, checks the "chiastic" out-of-order signature of a back-sp
 emits one row per supporting read in bsj_finder's existing bsj_cor.tsv schema so the current
 converter (bsj_finder_to_bed.py) and benchmark score it unchanged:
 
-    q_id  bsj_coord  chromosome  s_start  s_end  s_strand  overlap_trimmed_nt
+    q_id  bsj_coord  chromosome  s_start  s_end  s_strand  overlap_trimmed_nt  mapq
+
+`mapq` is the MAPQ of the worse-anchored of the two arms (see the emit site below).
 
 Coordinates are 0-based, s_start<s_end (circle_start / circle_end convention of truth_bsj.tsv).
 Dependency-free (stdlib only). Reads SAM from a file arg or stdin.
@@ -141,9 +143,17 @@ def detect(sam_fh, min_anchor=30, min_mapq=1, max_gap_size=100000,
             # is correct for all of them. forward: already the transcript strand.
             # unstranded: left as aligned -- not meaningful, see the Snakefile.
             out_strand = ("-" if strand == "+" else "+") if strandedness == "reverse" else strand
-            yield f"{qname}\t{bsj_read_pos}\t{prim['chrom']}\t{left}\t{right}\t{out_strand}\t{ovl}\n"
+            # MAPQ of the LIMITING arm. A junction is only as well placed as its worse-
+            # anchored side: a read whose donor arm is unique (60) but whose acceptor arm
+            # is multi-mapping (0) does not localise the breakpoint, so min() is the
+            # honest summary. Carried per-read; bsj_summary.py takes the max across the
+            # reads supporting a junction (its best evidence) for the confidence tier.
+            arm_mapq = min(a["mapq"], b["mapq"])
+            yield (f"{qname}\t{bsj_read_pos}\t{prim['chrom']}\t{left}\t{right}\t"
+                   f"{out_strand}\t{ovl}\t{arm_mapq}\n")
 
-HEADER = "q_id\tbsj_coord\tchromosome\ts_start\ts_end\ts_strand\toverlap_trimmed_nt\n"
+HEADER = ("q_id\tbsj_coord\tchromosome\ts_start\ts_end\ts_strand\t"
+          "overlap_trimmed_nt\tmapq\n")
 
 
 def write_table(sam_fh, out_fh, min_anchor, min_mapq, max_gap_size,

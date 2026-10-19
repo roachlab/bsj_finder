@@ -51,6 +51,33 @@ mmseqs_static: false
 # orders of magnitude larger, so 10 separates them cleanly.
 bsj_locus_tol: 10
 
+# Minimum concordant supporting reads for a junction to appear at all.
+# 1 = report everything; raising it is an explicit per-dataset choice.
+bsj_min_reads: 1
+
+# Confidence tiering of the summary table ──────────────────────────────────
+# Adds `mapq` (best supporting read's limiting-arm MAPQ) and `confidence`
+# (high/medium/low) columns. Advisory only -- nothing is dropped; use
+# bsj_min_reads for that. A junction is `high` if it clears BOTH high_ cuts,
+# `medium` if it clears both med_ cuts, otherwise `low`.
+#
+# PROVISIONAL: these cuts were calibrated against the PRIMARY alignment MAPQ, but
+# the column written is the LIMITING arm's (min of the two), which runs lower. The
+# figures below are the design rationale, not measured performance of these values;
+# recalibration from a GBM rerun with the new detector follows.
+#
+# Measured on GBM against the human circRNA databases:
+#   high    9.1% of rows, 90.6% database-matched
+#   medium  5.4% of rows, 70.4% matched
+#   low    85.5% of rows, 14.7% matched
+# Read support is the dominant axis; MAPQ is worth 20-30 points from 2 reads up
+# but almost nothing at 1 read. Lower these for short-read libraries (e.g. 75bp),
+# which do not reach the same per-junction depth.
+bsj_high_min_reads: 3
+bsj_high_min_mapq: 30
+bsj_med_min_reads: 2
+bsj_med_min_mapq: 10
+
 # MMseqs2 deduplication parameters ─────────────────────────────────────────
 mmseqs_min_seq_id: 0.95
 mmseqs_min_cov: 0.70

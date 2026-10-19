@@ -234,6 +234,42 @@ logs/             per-rule logs
 | `s_end` | circle end (max genomic breakpoint) |
 | `s_strand` | strand |
 | `overlap_trimmed_nt` | microhomology overlap trimmed from the downstream breakpoint |
+| `mapq` | MAPQ of the worse-anchored of the two arms (a junction is only as well placed as its weaker side) |
+
+**`all_samples.bsj_summary.tsv` schema** (one row per unique junction, pooled across samples):
+
+| column | meaning |
+|--------|---------|
+| `chromosome`, `s_start`, `s_end`, `s_strand` | the junction coordinate (the row key) |
+| `overlap_trimmed_nt` | widest microhomology window any supporting read reported |
+| `n_reads` | concordant supporting reads (cluster members at this locus) |
+| `n_samples` | distinct samples among those reads |
+| `n_loci` | distinct loci in the sequence cluster; `1` is clean, `>1` means the clustering merged coordinates that disagree |
+| `mapq` | best `mapq` among the supporting reads |
+| `confidence` | `high` / `medium` / `low`, from `n_reads` and `mapq` together (see below) |
+
+**Confidence tiers.** Advisory only — nothing is dropped (`bsj_min_reads` does that).
+A junction is `high` if it clears both `bsj_high_*` cuts, `medium` if it clears both
+`bsj_med_*` cuts, otherwise `low`.
+
+> **Provisional.** The cut points below were calibrated against the *primary* alignment's
+> MAPQ, while the column actually written is the *limiting arm's* (the lower of the two),
+> which runs substantially lower. The shape of the relationship holds; the thresholds are
+> being recalibrated against the limiting-arm metric.
+
+Measured on GBM against the human circRNA databases, the defaults
+(3 reads / MAPQ 30 and 2 reads / MAPQ 10) give:
+
+| tier | rows | database-matched |
+|------|------|------------------|
+| `high` | 50,273 (9.1%) | 90.6% |
+| `medium` | 29,533 (5.4%) | 70.4% |
+| `low` | 470,135 (85.5%) | 14.7% |
+
+Read support is the dominant axis and MAPQ modulates within it: at one supporting read
+MAPQ is worth almost nothing (10.4% → 15.1% match across the whole MAPQ range), but from
+two reads up it is worth 20–30 points. Lower the cuts for short-read libraries, which do
+not reach the same per-junction depth.
 
 To aggregate per-read rows into **junction-level calls** (clustering breakpoints and summing read
 support), see `benchmark/bsj_finder_to_bed.py` in the `BSJ_test_dataset` submodule.
@@ -287,6 +323,17 @@ Set via `config/config.yaml` or `--config key=value`.
 > It is a property of the **host**, not of the dataset, so leave it `false` unless
 > `grep avx2 /proc/cpuinfo` comes up empty. If it is on and the binary is missing, the workflow
 > fails at parse time rather than mid-run.
+
+**Summary table (`bsj_summary.py`)**
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `bsj_locus_tol` | `10` | Breakpoint slop (bp) within which two cluster members count as the same locus, for `n_loci`. |
+| `bsj_min_reads` | `1` | Drop junctions below this many concordant supporting reads. `1` = keep everything. |
+| `bsj_high_min_reads` | `3` | Reads required for the `high` tier. |
+| `bsj_high_min_mapq` | `30` | Best-read MAPQ required for the `high` tier. |
+| `bsj_med_min_reads` | `2` | Reads required for the `medium` tier. |
+| `bsj_med_min_mapq` | `10` | Best-read MAPQ required for the `medium` tier. |
 
 **Polishing (`samtools`/`bcftools`)**
 

@@ -44,6 +44,45 @@ min_align_len=20.
 Default is 1 (report everything), so enabling the filter is an explicit per-dataset
 choice rather than a silent change to the catalogue.
 
+`mapq` is the best (maximum) per-read MAPQ among those same concordant members.
+sa_detect.py records, for each supporting read, the MAPQ of its worse-anchored arm;
+this column takes the best such value a junction achieved, i.e. the quality of its
+strongest single piece of evidence.
+
+`confidence` tiers a junction on read support AND placement quality together, the
+two axes that actually separate signal from noise.
+
+PROVISIONAL THRESHOLDS. The grid below was measured against the PRIMARY alignment's
+MAPQ, which is what was to hand when the tiers were designed. The column this script
+actually reads is the LIMITING arm's MAPQ (min of the two arms), which runs
+substantially lower -- reads whose primary scores 60 give limiting-arm values in the
+single digits to the fifties. The shape of the grid holds but the cut points do not;
+they are recalibrated against the limiting-arm metric in a follow-up commit, from a
+GBM rerun with the new detector. Treat the numbers below as the design rationale,
+not as the measured performance of these defaults.
+
+Measured on GBM (552,600 junctions, scored against the human circRNA databases as a
+truth proxy), match rate over the two axes:
+
+    mapq / n_reads        1          2        3-5       6-19        20+
+          0-9         10.4%      39.6%      50.0%      46.8%          -
+        10-29         11.6%      44.3%      60.8%      84.2%          -
+        30-59         14.0%      54.8%      68.7%      91.8%     100.0%
+           60         15.1%      72.2%      86.1%      96.4%      98.7%
+
+Read support is the dominant axis and MAPQ modulates within it: at one read MAPQ
+barely helps (10.4% -> 15.1%), but from two reads up it is worth 20-30 points. The
+defaults follow that shape --
+
+    high    n_reads >= 3 AND mapq >= 30     50,273 rows ( 9.1%)   90.6% match
+    medium  n_reads >= 2 AND mapq >= 10     29,533 rows ( 5.4%)   70.4% match
+    low     everything else                470,135 rows (85.5%)   14.7% match
+
+No row is dropped: tiering is advisory and orthogonal to `min_reads`, which does
+drop rows. Thresholds are configurable (bsj_high_min_reads / bsj_high_min_mapq /
+bsj_med_min_reads / bsj_med_min_mapq) because the right cut is dataset-dependent --
+a 75 bp library will not reach the same support depth as a 150 bp one.
+
 A row is keyed on the 4-field coordinate (chromosome, s_start, s_end, s_strand)
 ONLY. `overlap_trimmed_nt` is a property of the supporting READ -- how much
 microhomology sa_detect.py consumed to place that read's breakpoint -- not of the
@@ -111,10 +150,21 @@ def group_loci(coords, tol):
     return groups
 
 
-def main(cor, pool_fasta, pool_cluster, out, locus_tol=10, min_reads=1):
+def confidence_of(n_reads, mapq, high_min_reads, high_min_mapq,
+                  med_min_reads, med_min_mapq):
+    """Tier a junction on support depth and placement quality. See module docstring."""
+    if n_reads >= high_min_reads and mapq >= high_min_mapq:
+        return "high"
+    if n_reads >= med_min_reads and mapq >= med_min_mapq:
+        return "medium"
+    return "low"
+
+
+def main(cor, pool_fasta, pool_cluster, out, locus_tol=10, min_reads=1,
+         high_min_reads=3, high_min_mapq=30, med_min_reads=2, med_min_mapq=10):
     """cor: list of per-sample bsj_cor.tsv.gz; the rest are single paths."""
 
-    # ── 1) Index bsj_cor: (q_id, bsj_coord) -> (chrom, s_start, s_end, s_strand, overlap) ──
+    # ── 1) Index bsj_cor: (q_id, bsj_coord) -> (chrom, s_start, s_end, s_strand, overlap, mapq) ──
     idx = {}
     n_cor_rows = 0
     for path in cor:
@@ -124,7 +174,11 @@ def main(cor, pool_fasta, pool_cluster, out, locus_tol=10, min_reads=1):
                 p = line.rstrip("\n").split("\t")
                 if len(p) < 7:
                     continue
-                idx[(p[0], p[1])] = (p[2], p[3], p[4], p[5], p[6])
+                # mapq (col 8) was added after the first release of this schema; a
+                # bsj_cor written by the older detector has 7 columns, so fall back to
+                # 0 rather than refusing to summarise an existing results tree.
+                mapq = as_int(p[7]) if len(p) > 7 else 0
+                idx[(p[0], p[1])] = (p[2], p[3], p[4], p[5], p[6], mapq)
                 n_cor_rows += 1
     logging.info(f"bsj_cor rows indexed: {n_cor_rows:,} from {len(cor)} sample files")
 
@@ -135,9 +189,10 @@ def main(cor, pool_fasta, pool_cluster, out, locus_tol=10, min_reads=1):
     # ever a member of its own cluster, so every lookup returns just its own sample
     # and all cross-sample support is dropped. Sanity check: len(support) must equal
     # the number of records in the pool fasta.
-    # rep -> [(member coordinate or None, member sample), ...]. The coordinate is what
-    # makes the concordance check possible; None means the member's header did not
-    # resolve in bsj_cor, in which case it is counted as concordant rather than dropped.
+    # rep -> [(member coordinate or None, member sample, member mapq), ...]. The
+    # coordinate is what makes the concordance check possible; None means the member's
+    # header did not resolve in bsj_cor, in which case it is counted as concordant
+    # rather than dropped (and contributes no mapq).
     support = collections.defaultdict(list)
     n_members = n_unresolved = 0
     with open(pool_cluster) as fh:
@@ -152,7 +207,7 @@ def main(cor, pool_fasta, pool_cluster, out, locus_tol=10, min_reads=1):
             coord = (row[0], as_int(row[1]), as_int(row[2]), row[3]) if row else None
             if coord is None:
                 n_unresolved += 1
-            support[q].append((coord, sample_of(t)))
+            support[q].append((coord, sample_of(t), row[5] if row else None))
             n_members += 1
     logging.info(f"cluster members read: {n_members:,} (clusters: {len(support):,}"
                  f"{f', unresolved coords: {n_unresolved:,}' if n_unresolved else ''})")
@@ -198,16 +253,18 @@ def main(cor, pool_fasta, pool_cluster, out, locus_tol=10, min_reads=1):
     tol = locus_tol
     n_discordant = 0
     n_filtered = 0
+    tiers = collections.Counter()
     with open(out, "w") as fo:
         fo.write("chromosome\ts_start\ts_end\ts_strand\toverlap_trimmed_nt\t"
-                 "n_reads\tn_samples\tn_loci\n")
+                 "n_reads\tn_samples\tn_loci\tmapq\tconfidence\n")
         for row in sorted(rows, key=lambda r: (chrom_key(r[0]), int(r[1]), int(r[2]))):
             this = (row[0], as_int(row[1]), as_int(row[2]), row[3])
             samples = set()
             member_coords = set()
             n_reads = 0
+            best_mapq = 0
             for rep in rows[row]:
-                for coord, sample in support.get(rep, ()):
+                for coord, sample, mapq in support.get(rep, ()):
                     if coord is None:
                         samples.add(sample)      # unresolvable: keep, do not penalise
                         n_reads += 1
@@ -216,6 +273,8 @@ def main(cor, pool_fasta, pool_cluster, out, locus_tol=10, min_reads=1):
                     if same_locus(coord, this, tol):
                         samples.add(sample)
                         n_reads += 1             # counted over the SAME members as n_samples
+                        if mapq is not None and mapq > best_mapq:
+                            best_mapq = mapq     # best evidence, over the same members
             if n_reads < min_reads:
                 n_filtered += 1
                 continue
@@ -223,8 +282,11 @@ def main(cor, pool_fasta, pool_cluster, out, locus_tol=10, min_reads=1):
             if n_loci > 1:
                 n_discordant += 1
             ovl = max(overlaps[row])
+            conf = confidence_of(n_reads, best_mapq, high_min_reads, high_min_mapq,
+                                 med_min_reads, med_min_mapq)
+            tiers[conf] += 1
             fo.write(f"{row[0]}\t{row[1]}\t{row[2]}\t{row[3]}\t{ovl}\t"
-                     f"{n_reads}\t{len(samples)}\t{n_loci}\n")
+                     f"{n_reads}\t{len(samples)}\t{n_loci}\t{best_mapq}\t{conf}\n")
 
     if min_reads > 1:
         logging.info(f"rows dropped by min_reads={min_reads}: {n_filtered:,} "
@@ -232,6 +294,12 @@ def main(cor, pool_fasta, pool_cluster, out, locus_tol=10, min_reads=1):
     logging.info(f"rows whose cluster spans >1 locus (n_loci>1, tol={tol}bp): {n_discordant:,} "
                  f"({100*n_discordant/max(len(rows),1):.2f}%) -- their n_samples counts only "
                  f"concordant members")
+    n_tiered = sum(tiers.values())
+    logging.info(f"confidence tiers (high: >={high_min_reads} reads & MAPQ>={high_min_mapq}; "
+                 f"medium: >={med_min_reads} reads & MAPQ>={med_min_mapq}): "
+                 + " | ".join(f"{t}: {tiers[t]:,} "
+                              f"({100*tiers[t]/max(n_tiered,1):.1f}%)"
+                              for t in ("high", "medium", "low")))
     logging.info(f"wrote summary table -> {out}")
 
 
@@ -251,9 +319,18 @@ def _from_cli():
                     help="breakpoint slop (bp) within which two member coordinates are "
                          "the same locus (default 10; microhomology wobble is typically "
                          "<=10bp, real false merges are far larger)")
+    ap.add_argument("--high-min-reads", type=int, default=3)
+    ap.add_argument("--high-min-mapq", type=int, default=30,
+                    help="a junction needs at least --high-min-reads supporting reads "
+                         "AND a best-read MAPQ of at least this to be tiered 'high'")
+    ap.add_argument("--med-min-reads", type=int, default=2)
+    ap.add_argument("--med-min-mapq", type=int, default=10,
+                    help="same pair of thresholds for the 'medium' tier; anything "
+                         "meeting neither is 'low'")
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    main(a.cor, a.pool_fasta, a.pool_cluster, a.out, a.locus_tol, a.min_reads)
+    main(a.cor, a.pool_fasta, a.pool_cluster, a.out, a.locus_tol, a.min_reads,
+         a.high_min_reads, a.high_min_mapq, a.med_min_reads, a.med_min_mapq)
 
 
 # Snakemake's `script:` directive injects a `snakemake` object into the module globals
@@ -272,6 +349,10 @@ if "snakemake" in globals():
         out=str(snakemake.output.tsv),
         locus_tol=int(snakemake.params.locus_tol),
         min_reads=int(snakemake.params.min_reads),
+        high_min_reads=int(snakemake.params.high_min_reads),
+        high_min_mapq=int(snakemake.params.high_min_mapq),
+        med_min_reads=int(snakemake.params.med_min_reads),
+        med_min_mapq=int(snakemake.params.med_min_mapq),
     )
 elif __name__ == "__main__":
     _from_cli()
