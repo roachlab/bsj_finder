@@ -43,13 +43,17 @@ rule detect_bsj_cor:
         max_gap_size  = config.get("max_gap_size",  100000),   # max genomic span of a circle
         max_read_gap  = config.get("sa_max_read_gap",   15),   # max unaligned gap between arms (read bp)
         max_read_ovlp = config.get("sa_max_read_ovlp",  15),   # max arm overlap / microhomology (read bp)
-        # GTF/GFF, used ONLY for a library detect_strandedness calls `unstranded`:
-        # such a library's aligned strand is a coin flip, so the junction strand is
-        # taken from the single annotated gene containing both breakpoints instead.
-        # A param, not an input: the annotation is a static reference file the
-        # pipeline never builds, so making it an input would add a missing-file
-        # failure for every dataset that legitimately has none.
-        annotation    = config.get("annotation", None)
+        # Strand inference for a library detect_strandedness calls `unstranded`.
+        # Such a library's aligned strand is a coin flip, so the strand comes from
+        # the genome instead: the splice motif at the breakpoints first, the host
+        # gene's strand from `annotation` second (see StrandInferrer). Both are
+        # params, not inputs -- they are static reference files the pipeline never
+        # builds, so making them inputs would add a missing-file failure for every
+        # dataset that legitimately has no annotation. The genome is the FASTA, not
+        # the .mmi the aligner consumes, since this reads bases rather than aligns.
+        genome        = config["genome"],
+        annotation    = config.get("annotation", None),
+        motif_slop    = config.get("motif_slop", 2)
 
     script:
         os.path.join("..", "scripts", "sa_detect.py")

@@ -23,7 +23,7 @@ taken from a gene annotation instead when one is configured (`--annotation`); se
 Coordinates are 0-based, s_start<s_end (circle_start / circle_end convention of truth_bsj.tsv).
 Dependency-free (stdlib only). Reads SAM from a file arg or stdin.
 """
-import sys, re, gzip, argparse
+import sys, re, os, gzip, argparse
 
 _CIG = re.compile(r'(\d+)([MIDNSHP=X])')
 
@@ -42,6 +42,105 @@ def clips(cig):
     m = re.search(r'(\d+)([SH])$', cig)
     if m: trail = int(m.group(1))
     return lead, trail
+
+# ── Splice-motif strand inference (unstranded libraries only) ────────────────
+# The spliceosome leaves its signature in the genome at the two breakpoints, and
+# that signature is strand-specific, so it names the junction's strand outright --
+# no annotation, and (unlike the host-gene rule below) it is right about ANTISENSE
+# circles, which are transcribed opposite to the gene they sit inside.
+#
+# With `left`/`right` the circle's 0-based start and end, the two dinucleotides are
+#     donor    = genome[right : right+2]      intron base pair just past the circle
+#     acceptor = genome[left-2 : left]        intron base pair just before it
+# On the transcript's own strand a major-spliceosome intron reads GT..AG and a minor
+# (U12) intron AT..AC. Read off the PLUS strand of the genome, a minus-strand circle
+# therefore shows the reverse complement, with donor and acceptor swapping ends:
+#
+#     (donor, acceptor)   strand   intron
+#       GT   AG              +     U2  (major)
+#       AT   AC              +     U12 (minor)
+#       CT   AC              -     U2  rc
+#       GT   AT              -     U12 rc
+#
+# All four pairs are distinct, so the PAIR is unambiguous even though GT and AC each
+# appear on both strands. Anything else is a non-canonical junction and yields '.'.
+MOTIF_STRAND = {("GT", "AG"): "+", ("AT", "AC"): "+",
+                ("CT", "AC"): "-", ("GT", "AT"): "-"}
+
+
+class GenomeSeq:
+    """Dinucleotide lookups on a reference FASTA.
+
+    Prefers faidx random access -- a junction needs 4 bases, so reading 3 GB into
+    every concurrent detect job to get them would be absurd. Falls back to an
+    in-memory parse when there is no .fai or the FASTA is gzipped (a plain gzip is
+    not seekable; only bgzf is), which is the small-genome / benchmark case.
+    """
+
+    def __init__(self, path):
+        self.path = str(path)
+        self.idx, self.mem, self.fh = None, None, None
+        fai = self.path + ".fai"
+        if not self.path.endswith(".gz") and os.path.exists(fai):
+            self.idx = {}
+            with open(fai) as fh:
+                for line in fh:
+                    f = line.rstrip("\n").split("\t")
+                    if len(f) >= 5:
+                        # name -> (length, offset, bases-per-line, bytes-per-line)
+                        self.idx[f[0]] = (int(f[1]), int(f[2]), int(f[3]), int(f[4]))
+            self.fh = open(self.path, "rb")
+        else:
+            self.mem = {}
+            opener = gzip.open if self.path.endswith(".gz") else open
+            name, buf = None, []
+            with opener(self.path, "rt") as fh:
+                for line in fh:
+                    if line.startswith(">"):
+                        if name:
+                            self.mem[name] = "".join(buf)
+                        name, buf = line[1:].split()[0], []
+                    else:
+                        buf.append(line.strip())
+            if name:
+                self.mem[name] = "".join(buf)
+
+    def fetch(self, chrom, start, end):
+        """0-based half-open slice, uppercased; '' if out of range or unknown contig."""
+        if start < 0:
+            return ""
+        if self.mem is not None:
+            seq = self.mem.get(chrom)
+            return seq[start:end].upper() if seq and end <= len(seq) else ""
+        rec = self.idx.get(chrom)
+        if rec is None:
+            return ""
+        length, offset, linebases, linewidth = rec
+        if end > length:
+            return ""
+        # skip the newline bytes that fall inside the requested span
+        self.fh.seek(offset + start // linebases * linewidth + start % linebases)
+        raw = self.fh.read((end - start) + (end - start) // linebases + 2)
+        return raw.decode("ascii", "replace").replace("\n", "").replace("\r", "")[:end - start].upper()
+
+
+def motif_strand(genome, chrom, left, right, slop=2):
+    """Strand from the splice motifs at the breakpoints, or '.' if non-canonical.
+
+    Microhomology makes a breakpoint ambiguous over a few bases, and the detector
+    left-aligns it, so the spliceosomal pair can sit a shift away from the reported
+    coordinate. `slop` walks outward from 0 and takes the first shift that reads
+    canonical; 0 checks the reported position only.
+    """
+    for d in range(0, slop + 1):
+        for shift in ((0,) if d == 0 else (d, -d)):
+            donor = genome.fetch(chrom, right + shift, right + shift + 2)
+            acceptor = genome.fetch(chrom, left + shift - 2, left + shift)
+            hit = MOTIF_STRAND.get((donor, acceptor))
+            if hit:
+                return hit
+    return "."
+
 
 # ── Gene-annotation strand inference (unstranded libraries only) ─────────────
 # An unstranded library gives no information about which strand a junction came
@@ -118,6 +217,56 @@ def gene_strand(index, chrom, left, right):
     return strands.pop() if len(strands) == 1 else "."
 
 
+class StrandInferrer:
+    """Junction strand for an UNSTRANDED library: splice motif first, host gene second.
+
+    Motif leads because it is direct physical evidence of the splice reaction at these
+    exact breakpoints, it needs no annotation at all, and it is the only one of the two
+    that can be right about an ANTISENSE circle -- one transcribed opposite to the gene
+    it sits inside reads CT/AC where the host-gene rule can only report the host's '+'.
+    The annotation then covers what the motif cannot: non-canonical junctions, which are
+    real but carry no spliceosomal signature.
+
+    Results are memoised. The strand is a property of the junction, but inference runs
+    once per SUPPORTING READ, and a well-covered junction has hundreds -- without the
+    cache the same four bases get seeked off disk hundreds of times.
+    """
+
+    def __init__(self, genome=None, gene_index=None, motif_slop=2):
+        self.genome = genome
+        self.gene_index = gene_index
+        self.motif_slop = motif_slop
+        self._cache = {}
+        self.n_motif = self.n_gene = self.n_none = 0
+
+    def strand(self, chrom, left, right):
+        key = (chrom, left, right)
+        hit = self._cache.get(key)
+        if hit is None:
+            hit = self._infer(chrom, left, right)
+            self._cache[key] = hit
+        return hit
+
+    def _infer(self, chrom, left, right):
+        if self.genome is not None:
+            st = motif_strand(self.genome, chrom, left, right, self.motif_slop)
+            if st != ".":
+                self.n_motif += 1
+                return st
+        if self.gene_index is not None:
+            st = gene_strand(self.gene_index, chrom, left, right)
+            if st != ".":
+                self.n_gene += 1
+                return st
+        self.n_none += 1
+        return "."
+
+    def summary(self):
+        total = self.n_motif + self.n_gene + self.n_none
+        return (f"{total:,} distinct junctions: {self.n_motif:,} by splice motif, "
+                f"{self.n_gene:,} by host gene, {self.n_none:,} unresolved ('.')")
+
+
 def seg_from(chrom, pos1, strand, cig, mapq):
     """Build a segment dict in ORIGINAL-read coordinates.
     ref span is 0-based half-open [ref_start, ref_end)."""
@@ -135,7 +284,7 @@ def seg_from(chrom, pos1, strand, cig, mapq):
     return dict(chrom=chrom, strand=strand, rs=rs, re=re_, qs=q_start, qe=q_end, mapq=mapq)
 
 def detect(sam_fh, min_anchor=30, min_mapq=1, max_gap_size=100000,
-           gene_index=None,
+           inferrer=None,
            strandedness="unstranded",
            max_read_gap=15, max_read_ovlp=15):
     for ln in sam_fh:
@@ -221,14 +370,14 @@ def detect(sam_fh, min_anchor=30, min_mapq=1, max_gap_size=100000,
             # junction's real strand is the opposite. R2 is reverse-complemented upstream
             # in rename_read_ids_pe, so both mates arrive in R1's orientation and one flip
             # is correct for all of them. forward: already the transcript strand.
-            # unstranded: the aligned strand is a coin flip, so take the host gene's
-            # strand from the annotation when one is loaded (see gene_strand above).
-            # Without an annotation there is nothing better to report than the aligned
-            # strand, which is why `annotation` is worth setting for such a library.
+            # unstranded: the aligned strand is a coin flip, so infer it from the
+            # genome instead -- splice motif first, host gene second (StrandInferrer).
+            # With no inferrer there is nothing better to report than the aligned
+            # strand, which is why an unstranded library warns about that.
             if strandedness == "reverse":
                 out_strand = "-" if strand == "+" else "+"
-            elif strandedness == "unstranded" and gene_index is not None:
-                out_strand = gene_strand(gene_index, prim["chrom"], left, right)
+            elif strandedness == "unstranded" and inferrer is not None:
+                out_strand = inferrer.strand(prim["chrom"], left, right)
             else:
                 out_strand = strand
             # MAPQ of the LIMITING arm. A junction is only as well placed as its worse-
@@ -246,11 +395,11 @@ HEADER = ("q_id\tbsj_coord\tchromosome\ts_start\ts_end\ts_strand\t"
 
 def write_table(sam_fh, out_fh, min_anchor, min_mapq, max_gap_size,
                 max_read_gap, max_read_ovlp, strandedness="unstranded",
-                gene_index=None):
+                inferrer=None):
     """Stream SAM records in, bsj_cor rows out. Returns the row count."""
     out_fh.write(HEADER)
     n = 0
-    for line in detect(sam_fh, min_anchor, min_mapq, max_gap_size, gene_index,
+    for line in detect(sam_fh, min_anchor, min_mapq, max_gap_size, inferrer,
                        strandedness, max_read_gap, max_read_ovlp):
         out_fh.write(line)
         n += 1
@@ -263,10 +412,19 @@ def main():
     ap.add_argument("--out", default="-", help="output bsj_cor.tsv, or '-' for stdout")
     ap.add_argument("--min-anchor", type=int, default=30)
     ap.add_argument("--min-mapq", type=int, default=1)
+    ap.add_argument("--genome", default=None,
+                    help="reference FASTA; for an UNSTRANDED library its splice motifs "
+                         "give each junction's strand (faidx random access when a .fai "
+                         "sits beside it)")
     ap.add_argument("--annotation", default=None,
-                    help="GTF/GFF (.gz ok) used ONLY for an unstranded library, to take "
-                         "each junction's strand from the single annotated gene "
-                         "containing both breakpoints; unresolved junctions get '.'")
+                    help="GTF/GFF (.gz ok), the FALLBACK for an unstranded junction whose "
+                         "motif is non-canonical: the strand of the single annotated gene "
+                         "containing both breakpoints. Unresolved junctions get '.'")
+    ap.add_argument("--motif-slop", type=int, default=2,
+                    help="bp to shift both breakpoints looking for a canonical motif. "
+                         "Microhomology makes a breakpoint ambiguous over a few bases "
+                         "and the detector left-aligns it, so the spliceosomal pair can "
+                         "sit a shift away (default 2; 0 = reported position only)")
     ap.add_argument("--max-gap-size", type=int, default=100000)
     ap.add_argument("--max-read-gap", type=int, default=15)
     ap.add_argument("--max-read-ovlp", type=int, default=15)
@@ -279,10 +437,13 @@ def main():
     n = 0
     try:
         strandedness = resolve_strandedness(a.strandedness)
-        gene_index = load_annotation(a.annotation, strandedness, sys.stderr.write)
+        inferrer = build_inferrer(a.genome, a.annotation, strandedness,
+                                  a.motif_slop, sys.stderr.write)
         n = write_table(fh, out, a.min_anchor, a.min_mapq, a.max_gap_size,
                         a.max_read_gap, a.max_read_ovlp,
-                        strandedness, gene_index)
+                        strandedness, inferrer)
+        if inferrer is not None:
+            sys.stderr.write(f"[sa_detect] strand inference -- {inferrer.summary()}\n")
     finally:
         if fh is not sys.stdin: fh.close()
         if out is not sys.stdout: out.close()
@@ -307,28 +468,40 @@ def resolve_strandedness(value):
     return verdict
 
 
-def load_annotation(path, strandedness, log):
-    """Build the gene index, but only where it is actually used.
+def build_inferrer(genome_path, annotation, strandedness, motif_slop, log):
+    """Assemble the unstranded-library strand inferrer, or None where unused.
 
-    Loading is skipped for forward/reverse libraries: their junction strand is already
-    determined by the read, so an annotation would cost parse time and change nothing.
-    An unstranded library WITHOUT one keeps the old behaviour (the aligned strand) and
-    gets a warning, because that strand is a coin flip -- quiet degradation here would
-    look like data rather than a missing setting.
+    Nothing is loaded for forward/reverse libraries: their junction strand is already
+    determined by the read, so the genome and annotation would cost load time and
+    change no output. An unstranded library with NEITHER keeps the old behaviour (the
+    aligned strand) and warns, because quiet degradation there looks like data rather
+    than a missing setting.
     """
     if strandedness != "unstranded":
-        if path:
-            log(f"[sa_detect] annotation ignored: only used for unstranded libraries\n")
+        if annotation:
+            log("[sa_detect] annotation ignored: only used for unstranded libraries\n")
         return None
-    if not path:
-        log("[sa_detect] WARNING: unstranded library and no `annotation` configured -- "
-            "junction strand falls back to the ALIGNED strand, which is arbitrary for "
-            "such a library and splits junctions across both strands\n")
+
+    genome = gene_index = None
+    if genome_path and os.path.exists(str(genome_path)):
+        genome = GenomeSeq(genome_path)
+        log(f"[sa_detect] splice-motif strand inference from {genome_path} "
+            f"({'faidx' if genome.idx is not None else 'in-memory'}"
+            f"{f', slop {motif_slop}bp' if motif_slop else ''})\n")
+    else:
+        log(f"[sa_detect] WARNING: genome {genome_path!r} not readable -- no splice-motif "
+            f"strand inference\n")
+    if annotation:
+        gene_index, n_genes = load_gene_strands(annotation)
+        log(f"[sa_detect] host-gene fallback: {n_genes:,} genes from {annotation} "
+            f"({len(gene_index)} contigs)\n")
+
+    if genome is None and gene_index is None:
+        log("[sa_detect] WARNING: unstranded library with neither a readable genome nor "
+            "an `annotation` -- junction strand falls back to the ALIGNED strand, which "
+            "is arbitrary for such a library and splits junctions across both strands\n")
         return None
-    index, n_genes = load_gene_strands(path)
-    log(f"[sa_detect] annotation: {n_genes:,} genes from {path} "
-        f"({len(index)} contigs) -- unstranded strand inferred from the host gene\n")
-    return index
+    return StrandInferrer(genome, gene_index, motif_slop)
 
 
 def _from_snakemake(smk):
@@ -350,6 +523,8 @@ def _from_snakemake(smk):
     p = smk.params
     strandedness = resolve_strandedness(str(smk.input.strandedness))
     annotation = getattr(smk.params, "annotation", None) or None
+    genome = getattr(smk.params, "genome", None) or None
+    motif_slop = int(getattr(smk.params, "motif_slop", 2) or 0)
     out_path = str(smk.output.tsv)
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
 
@@ -359,7 +534,8 @@ def _from_snakemake(smk):
         log_fh.write(f"[sa_detect] {' '.join(cmd)}\n")
         log_fh.write(f"[sa_detect] strandedness: {strandedness}"
                      f"{' (junction strand flipped)' if strandedness == 'reverse' else ''}\n")
-        gene_index = load_annotation(annotation, strandedness, log_fh.write)
+        inferrer = build_inferrer(genome, annotation, strandedness,
+                                  motif_slop, log_fh.write)
         log_fh.flush()
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=log_fh, text=True)
         try:
@@ -367,7 +543,7 @@ def _from_snakemake(smk):
                 n = write_table(proc.stdout, out_fh,
                                 p.min_anchor, p.min_mapq, p.max_gap_size,
                                 p.max_read_gap, p.max_read_ovlp, strandedness,
-                                gene_index)
+                                inferrer)
         finally:
             proc.stdout.close()
             rc = proc.wait()
@@ -375,6 +551,8 @@ def _from_snakemake(smk):
             # Without this the rule would "succeed" on a truncated BAM: the pipeline's
             # old `samtools | python` form hid samtools' exit status the same way.
             raise SystemExit(f"samtools view failed (exit {rc}) -- see {smk.log[0]}")
+        if inferrer is not None:
+            log_fh.write(f"[sa_detect] strand inference -- {inferrer.summary()}\n")
         log_fh.write(f"[sa_detect] {n} BSJ read-support rows\n")
 
 

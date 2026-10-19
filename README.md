@@ -287,34 +287,56 @@ Set via `config/config.yaml` or `--config key=value`.
 | `genome` | — | Reference FASTA (.gz ok). |
 | `readDirectory` | — | Directory of input FASTQs. |
 | `outdir` | `results` | Output directory. |
-| `annotation` | — | GTF/GFF (.gz ok). Optional; used **only** to give junctions a strand in an unstranded library (see below). |
+| `annotation` | — | GTF/GFF (.gz ok). Optional; the *fallback* for junction strand in an unstranded library (see below). |
+| `motif_slop` | `2` | bp to shift both breakpoints when looking for a canonical splice motif. |
 
 **Junction strand in an unstranded library.** A forward or reverse library determines a
 junction's strand from the read itself. An unstranded one cannot: it sequences sense and
 antisense in equal measure, so a supporting read's aligned strand is a coin flip — on the
 benchmark's `pe150_lowerr_unstr` library the per-read split is 572 `+` to 595 `-` for
-junctions that are overwhelmingly `+`.
+junctions that are overwhelmingly `+`. The detector infers it from the genome instead, in
+priority order:
 
-Set `annotation` and the detector instead takes the strand of the single annotated gene
-**containing both breakpoints**. A circle is spliced out of its host gene, so the host's
-strand is the circle's; crucially it does not depend on which mate was sequenced, so both
-read orientations agree and the junction stops being split across two strands. Junctions
-no single gene resolves — intergenic circles, or nested/antisense gene pairs — get `.`,
-which is also orientation-independent, so they still collapse to one call.
+1. **Splice motif** at the two breakpoints. On the transcript's own strand a major intron
+   reads `GT..AG` and a minor (U12) one `AT..AC`; read off the plus strand, a minus-strand
+   circle shows the reverse complement with donor and acceptor swapping ends. The four
+   pairs — `(GT,AG)` `(AT,AC)` `(CT,AC)` `(GT,AT)` — are distinct, so the pair names the
+   strand outright. This uses `genome`, which is always configured, so it needs no setup.
+2. **Host gene** from `annotation` — the strand of the single annotated gene *containing*
+   both breakpoints (containment, not overlap: a gene covering one breakpoint is a
+   neighbour, not a host). Covers non-canonical junctions, which are real but carry no
+   spliceosomal signature.
+3. **`.`** when neither resolves it. Still orientation-independent, so the junction
+   collapses to one call rather than splitting across both strands.
 
-Strand accuracy over the 47 true positives of that library (recall and precision are
-identical either way — this moves strand only):
+Strand accuracy over the 47 true positives of that library (recall 0.979 / precision 1.000
+throughout — this moves strand only):
 
 | | correct | wrong | none | accuracy |
 |---|---|---|---|---|
-| without `annotation` | 17 | 24 | 6 | 0.362 |
-| with `annotation` | 40 | 1 | 6 | **0.851** |
+| neither | 17 | 24 | 6 | 0.362 |
+| motif only | 39 | 2 | 6 | 0.830 |
+| `annotation` only | 40 | 1 | 6 | 0.851 |
+| **motif → `annotation`** | **43** | 2 | 2 | **0.915** |
 
-> **Known limitation.** An *antisense* circle — one transcribed opposite to the gene it sits
-> inside — inherits that gene's strand and is called backwards; the host-gene assumption is
-> wrong for exactly this class and no annotation can flag it. The splice motif at the
-> breakpoints can (it reads GT-AG on the circle's own strand), so a motif check is the
-> natural way to close this gap.
+The two together beat either alone: the motif resolves junctions no gene contains, the
+annotation resolves junctions with no canonical motif.
+
+`motif_slop` (default `2`) exists because microhomology makes a breakpoint ambiguous over a
+few bases and the detector left-aligns it, so the spliceosomal pair can sit a shift away
+from the reported coordinate. It walks outward from 0 and takes the first canonical
+reading: `0` → 0.851, `1` → 0.894, `2` → 0.915, `5` → 0.915, `10` → 0.915 but with 3 wrong
+instead of 2. Past 2 it only trades `none` for error.
+
+> **Known limitation, antisense circles.** A circle transcribed opposite to the gene it sits
+> inside is called backwards by the host-gene rule, which inherits the host's strand. The
+> motif *should* catch these — a real antisense circle carries its own `GT..AG` on the minus
+> strand, reading `CT/AC` on the plus — but it does not rescue the benchmark's two
+> `M_antisense` cases: `generate_dataset.py` builds them as the reverse complement of a
+> plus-strand gene's exon span **without writing minus-strand splice sites**, so the genome
+> there reads `GT/AG` and the truth table's `CT/AC` motif is not present in the sequence.
+> Those two are the residual `wrong` above. On real data the motif is expected to handle
+> them; this benchmark cannot demonstrate it.
 
 **SA-tag detector (`sa_detect.py`)**
 
