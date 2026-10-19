@@ -42,7 +42,14 @@ rule detect_bsj_cor:
         min_mapq      = config.get("min_mapq",           1),
         max_gap_size  = config.get("max_gap_size",  100000),   # max genomic span of a circle
         max_read_gap  = config.get("sa_max_read_gap",   15),   # max unaligned gap between arms (read bp)
-        max_read_ovlp = config.get("sa_max_read_ovlp",  15)    # max arm overlap / microhomology (read bp)
+        max_read_ovlp = config.get("sa_max_read_ovlp",  15),   # max arm overlap / microhomology (read bp)
+        # GTF/GFF, used ONLY for a library detect_strandedness calls `unstranded`:
+        # such a library's aligned strand is a coin flip, so the junction strand is
+        # taken from the single annotated gene containing both breakpoints instead.
+        # A param, not an input: the annotation is a static reference file the
+        # pipeline never builds, so making it an input would add a missing-file
+        # failure for every dataset that legitimately has none.
+        annotation    = config.get("annotation", None)
 
     script:
         os.path.join("..", "scripts", "sa_detect.py")

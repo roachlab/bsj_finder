@@ -44,6 +44,30 @@ read_suffix: "/1"
 # AVX2-compiled and dies with SIGILL there. See the Snakefile for details.
 mmseqs_static: false
 
+# Gene annotation (GTF/GFF, .gz ok) ────────────────────────────────────────
+# OPTIONAL, and used for exactly one thing: giving a junction a strand when the
+# library is UNSTRANDED. Such a library sequences sense and antisense reads in
+# equal measure, so a junction's aligned strand is a coin flip -- measured on the
+# benchmark's pe150_lowerr_unstr library, the per-read split is 572 '+' to 595 '-'
+# for junctions that are overwhelmingly '+'. The detector instead takes the strand
+# of the single annotated gene CONTAINING both breakpoints, which does not depend
+# on which mate was sequenced, and reports '.' when no single gene resolves it.
+#
+# Measured on that library (strand accuracy over the 47 true positives; recall and
+# precision are identical either way, this only moves strand):
+#   without annotation   correct 17  wrong 24  none 6   accuracy 0.362
+#   with annotation      correct 40  wrong  1  none 6   accuracy 0.851
+#
+# KNOWN LIMITATION: an antisense circle -- one transcribed opposite to the gene it
+# sits inside -- inherits that gene's strand and is called backwards. The host-gene
+# assumption is wrong for exactly this class and the annotation cannot say so. The
+# splice motif at the breakpoints can (it reads GT-AG on the circle's own strand),
+# so a motif check is the natural way to close this gap.
+#
+# Ignored for forward/reverse libraries, whose strand the read already determines;
+# leave unset for a genome that has no annotation.
+# annotation: /path/to/genes.gtf
+
 # Cross-sample junction identity ───────────────────────────────────────────
 # Breakpoint slop (bp) within which two cluster members count as the SAME locus,
 # used for the n_loci concordance check in the summary table. Microhomology wobble

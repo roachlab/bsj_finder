@@ -16,10 +16,14 @@ converter (bsj_finder_to_bed.py) and benchmark score it unchanged:
 
 `mapq` is the MAPQ of the worse-anchored of the two arms (see the emit site below).
 
+For an UNSTRANDED library the aligned strand carries no information, so `s_strand` is
+taken from a gene annotation instead when one is configured (`--annotation`); see the
+"Gene-annotation strand inference" block below.
+
 Coordinates are 0-based, s_start<s_end (circle_start / circle_end convention of truth_bsj.tsv).
 Dependency-free (stdlib only). Reads SAM from a file arg or stdin.
 """
-import sys, re, argparse
+import sys, re, gzip, argparse
 
 _CIG = re.compile(r'(\d+)([MIDNSHP=X])')
 
@@ -39,6 +43,81 @@ def clips(cig):
     if m: trail = int(m.group(1))
     return lead, trail
 
+# ── Gene-annotation strand inference (unstranded libraries only) ─────────────
+# An unstranded library gives no information about which strand a junction came
+# from: R1 is sense half the time and antisense the other half, so the ALIGNMENT
+# strand of a supporting read is a coin flip. That is not merely uninformative, it
+# is actively destructive -- one real junction gets reported at '+' from some of its
+# reads and at '-' from the rest, and because the pool dedup keys on the 4-field
+# coordinate, it then survives as two half-supported rows.
+#
+# The fix is to derive the strand from something that does not depend on which mate
+# was sequenced. A circRNA is spliced out of a host gene, so the host gene's strand
+# IS the junction's strand; a BSJ contained within exactly one annotated gene
+# inherits it, and both read orientations then agree. Unresolvable cases return '.'
+# rather than a guess -- '.' is still ORIENTATION-INDEPENDENT, so the two halves
+# collapse to one row even when the strand itself is unknown.
+#
+# Genome-scale lookup: genes are bucketed into fixed bins and a junction only probes
+# the bin holding its left breakpoint, since containment requires the gene to cover
+# it. hg38 has ~60k genes over ~23k bins, so a probe scans a handful of intervals.
+GENE_BIN = 1 << 17   # 131072 bp
+GENE_ID_RE = re.compile(r'gene_id[ =]"?([^";]+)"?')
+
+
+def load_gene_strands(path):
+    """Parse a GTF/GFF into {chrom: {bin: [(start0, end, strand), ...]}}.
+
+    Uses `gene` features. A GTF that carries none (some GENCODE-derived subsets and
+    most GFF3-converted files) falls back to the span of each gene_id's transcript or
+    exon lines, so the annotation does not have to be in one particular dialect.
+    """
+    opener = gzip.open if str(path).endswith(".gz") else open
+    genes, spans = [], {}
+    with opener(path, "rt") as fh:
+        for line in fh:
+            if line.startswith("#"):
+                continue
+            f = line.rstrip("\n").split("\t")
+            if len(f) < 9 or f[6] not in ("+", "-"):
+                continue
+            try:
+                start, end = int(f[3]) - 1, int(f[4])   # GTF is 1-based inclusive
+            except ValueError:
+                continue
+            if f[2] == "gene":
+                genes.append((f[0], start, end, f[6]))
+            elif f[2] in ("transcript", "exon"):
+                m = GENE_ID_RE.search(f[8])
+                if m:
+                    key = (f[0], m.group(1), f[6])
+                    prev = spans.get(key)
+                    spans[key] = (min(prev[0], start), max(prev[1], end)) if prev else (start, end)
+    if not genes:
+        genes = [(c, lo, hi, st) for (c, _gid, st), (lo, hi) in spans.items()]
+
+    index = {}
+    for chrom, start, end, strand in genes:
+        per_chrom = index.setdefault(chrom, {})
+        for b in range(start // GENE_BIN, (end - 1) // GENE_BIN + 1):
+            per_chrom.setdefault(b, []).append((start, end, strand))
+    return index, len(genes)
+
+
+def gene_strand(index, chrom, left, right):
+    """Strand of the single annotated gene containing BOTH breakpoints, else '.'.
+
+    Containment, not overlap: a circle is spliced out of its host, so a gene that
+    covers only one breakpoint is a neighbour, not the host. Two containing genes on
+    opposite strands (a nested or antisense pair) are ambiguous and also give '.'.
+    """
+    hits = index.get(chrom, {}).get(left // GENE_BIN)
+    if not hits:
+        return "."
+    strands = {st for (lo, hi, st) in hits if lo <= left and right <= hi}
+    return strands.pop() if len(strands) == 1 else "."
+
+
 def seg_from(chrom, pos1, strand, cig, mapq):
     """Build a segment dict in ORIGINAL-read coordinates.
     ref span is 0-based half-open [ref_start, ref_end)."""
@@ -56,6 +135,7 @@ def seg_from(chrom, pos1, strand, cig, mapq):
     return dict(chrom=chrom, strand=strand, rs=rs, re=re_, qs=q_start, qe=q_end, mapq=mapq)
 
 def detect(sam_fh, min_anchor=30, min_mapq=1, max_gap_size=100000,
+           gene_index=None,
            strandedness="unstranded",
            max_read_gap=15, max_read_ovlp=15):
     for ln in sam_fh:
@@ -141,8 +221,16 @@ def detect(sam_fh, min_anchor=30, min_mapq=1, max_gap_size=100000,
             # junction's real strand is the opposite. R2 is reverse-complemented upstream
             # in rename_read_ids_pe, so both mates arrive in R1's orientation and one flip
             # is correct for all of them. forward: already the transcript strand.
-            # unstranded: left as aligned -- not meaningful, see the Snakefile.
-            out_strand = ("-" if strand == "+" else "+") if strandedness == "reverse" else strand
+            # unstranded: the aligned strand is a coin flip, so take the host gene's
+            # strand from the annotation when one is loaded (see gene_strand above).
+            # Without an annotation there is nothing better to report than the aligned
+            # strand, which is why `annotation` is worth setting for such a library.
+            if strandedness == "reverse":
+                out_strand = "-" if strand == "+" else "+"
+            elif strandedness == "unstranded" and gene_index is not None:
+                out_strand = gene_strand(gene_index, prim["chrom"], left, right)
+            else:
+                out_strand = strand
             # MAPQ of the LIMITING arm. A junction is only as well placed as its worse-
             # anchored side: a read whose donor arm is unique (60) but whose acceptor arm
             # is multi-mapping (0) does not localise the breakpoint, so min() is the
@@ -157,11 +245,12 @@ HEADER = ("q_id\tbsj_coord\tchromosome\ts_start\ts_end\ts_strand\t"
 
 
 def write_table(sam_fh, out_fh, min_anchor, min_mapq, max_gap_size,
-                max_read_gap, max_read_ovlp, strandedness="unstranded"):
+                max_read_gap, max_read_ovlp, strandedness="unstranded",
+                gene_index=None):
     """Stream SAM records in, bsj_cor rows out. Returns the row count."""
     out_fh.write(HEADER)
     n = 0
-    for line in detect(sam_fh, min_anchor, min_mapq, max_gap_size,
+    for line in detect(sam_fh, min_anchor, min_mapq, max_gap_size, gene_index,
                        strandedness, max_read_gap, max_read_ovlp):
         out_fh.write(line)
         n += 1
@@ -174,6 +263,10 @@ def main():
     ap.add_argument("--out", default="-", help="output bsj_cor.tsv, or '-' for stdout")
     ap.add_argument("--min-anchor", type=int, default=30)
     ap.add_argument("--min-mapq", type=int, default=1)
+    ap.add_argument("--annotation", default=None,
+                    help="GTF/GFF (.gz ok) used ONLY for an unstranded library, to take "
+                         "each junction's strand from the single annotated gene "
+                         "containing both breakpoints; unresolved junctions get '.'")
     ap.add_argument("--max-gap-size", type=int, default=100000)
     ap.add_argument("--max-read-gap", type=int, default=15)
     ap.add_argument("--max-read-ovlp", type=int, default=15)
@@ -185,9 +278,11 @@ def main():
     out = sys.stdout if a.out == "-" else open(a.out, "w")
     n = 0
     try:
+        strandedness = resolve_strandedness(a.strandedness)
+        gene_index = load_annotation(a.annotation, strandedness, sys.stderr.write)
         n = write_table(fh, out, a.min_anchor, a.min_mapq, a.max_gap_size,
                         a.max_read_gap, a.max_read_ovlp,
-                        resolve_strandedness(a.strandedness))
+                        strandedness, gene_index)
     finally:
         if fh is not sys.stdin: fh.close()
         if out is not sys.stdout: out.close()
@@ -212,6 +307,30 @@ def resolve_strandedness(value):
     return verdict
 
 
+def load_annotation(path, strandedness, log):
+    """Build the gene index, but only where it is actually used.
+
+    Loading is skipped for forward/reverse libraries: their junction strand is already
+    determined by the read, so an annotation would cost parse time and change nothing.
+    An unstranded library WITHOUT one keeps the old behaviour (the aligned strand) and
+    gets a warning, because that strand is a coin flip -- quiet degradation here would
+    look like data rather than a missing setting.
+    """
+    if strandedness != "unstranded":
+        if path:
+            log(f"[sa_detect] annotation ignored: only used for unstranded libraries\n")
+        return None
+    if not path:
+        log("[sa_detect] WARNING: unstranded library and no `annotation` configured -- "
+            "junction strand falls back to the ALIGNED strand, which is arbitrary for "
+            "such a library and splits junctions across both strands\n")
+        return None
+    index, n_genes = load_gene_strands(path)
+    log(f"[sa_detect] annotation: {n_genes:,} genes from {path} "
+        f"({len(index)} contigs) -- unstranded strand inferred from the host gene\n")
+    return index
+
+
 def _from_snakemake(smk):
     """Run under the `script:` directive.
 
@@ -230,6 +349,7 @@ def _from_snakemake(smk):
 
     p = smk.params
     strandedness = resolve_strandedness(str(smk.input.strandedness))
+    annotation = getattr(smk.params, "annotation", None) or None
     out_path = str(smk.output.tsv)
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
 
@@ -239,13 +359,15 @@ def _from_snakemake(smk):
         log_fh.write(f"[sa_detect] {' '.join(cmd)}\n")
         log_fh.write(f"[sa_detect] strandedness: {strandedness}"
                      f"{' (junction strand flipped)' if strandedness == 'reverse' else ''}\n")
+        gene_index = load_annotation(annotation, strandedness, log_fh.write)
         log_fh.flush()
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=log_fh, text=True)
         try:
             with gzip.open(out_path, "wt") as out_fh:
                 n = write_table(proc.stdout, out_fh,
                                 p.min_anchor, p.min_mapq, p.max_gap_size,
-                                p.max_read_gap, p.max_read_ovlp, strandedness)
+                                p.max_read_gap, p.max_read_ovlp, strandedness,
+                                gene_index)
         finally:
             proc.stdout.close()
             rc = proc.wait()

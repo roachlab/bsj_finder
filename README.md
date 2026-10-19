@@ -287,6 +287,34 @@ Set via `config/config.yaml` or `--config key=value`.
 | `genome` | — | Reference FASTA (.gz ok). |
 | `readDirectory` | — | Directory of input FASTQs. |
 | `outdir` | `results` | Output directory. |
+| `annotation` | — | GTF/GFF (.gz ok). Optional; used **only** to give junctions a strand in an unstranded library (see below). |
+
+**Junction strand in an unstranded library.** A forward or reverse library determines a
+junction's strand from the read itself. An unstranded one cannot: it sequences sense and
+antisense in equal measure, so a supporting read's aligned strand is a coin flip — on the
+benchmark's `pe150_lowerr_unstr` library the per-read split is 572 `+` to 595 `-` for
+junctions that are overwhelmingly `+`.
+
+Set `annotation` and the detector instead takes the strand of the single annotated gene
+**containing both breakpoints**. A circle is spliced out of its host gene, so the host's
+strand is the circle's; crucially it does not depend on which mate was sequenced, so both
+read orientations agree and the junction stops being split across two strands. Junctions
+no single gene resolves — intergenic circles, or nested/antisense gene pairs — get `.`,
+which is also orientation-independent, so they still collapse to one call.
+
+Strand accuracy over the 47 true positives of that library (recall and precision are
+identical either way — this moves strand only):
+
+| | correct | wrong | none | accuracy |
+|---|---|---|---|---|
+| without `annotation` | 17 | 24 | 6 | 0.362 |
+| with `annotation` | 40 | 1 | 6 | **0.851** |
+
+> **Known limitation.** An *antisense* circle — one transcribed opposite to the gene it sits
+> inside — inherits that gene's strand and is called backwards; the host-gene assumption is
+> wrong for exactly this class and no annotation can flag it. The splice motif at the
+> breakpoints can (it reads GT-AG on the circle's own strand), so a motif check is the
+> natural way to close this gap.
 
 **SA-tag detector (`sa_detect.py`)**
 
