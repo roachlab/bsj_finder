@@ -312,31 +312,28 @@ priority order:
 Strand accuracy over the 47 true positives of that library (recall 0.979 / precision 1.000
 throughout — this moves strand only):
 
-| | correct | wrong | none | accuracy |
-|---|---|---|---|---|
-| neither | 17 | 24 | 6 | 0.362 |
-| motif only | 39 | 2 | 6 | 0.830 |
-| `annotation` only | 40 | 1 | 6 | 0.851 |
-| **motif → `annotation`** | **43** | 2 | 2 | **0.915** |
+| | correct | wrong | none | accuracy | minus-strand |
+|---|---|---|---|---|---|
+| neither | 17 | 24 | 6 | 0.362 | 3/6 |
+| `annotation` only | 40 | 2 | 5 | 0.851 | 4/6 |
+| motif only | 41 | 0 | 6 | 0.872 | 6/6 |
+| **motif → `annotation`** | **45** | **0** | 2 | **0.957** | **6/6** |
 
 The two together beat either alone: the motif resolves junctions no gene contains, the
 annotation resolves junctions with no canonical motif.
 
+**The order matters**, and the `M_antisense` circles are why. A circle transcribed opposite
+to the gene it sits inside carries its own `GT..AG` on the minus strand, reading `CT/AC` on
+the plus — the motif gets it right, and the host-gene rule cannot, since it can only report
+the host's `+`. That is the whole minus-strand column above: motif-first scores 6/6, while
+annotation alone scores 4/6 and is wrong on both antisense cases.
+
 `motif_slop` (default `2`) exists because microhomology makes a breakpoint ambiguous over a
 few bases and the detector left-aligns it, so the spliceosomal pair can sit a shift away
 from the reported coordinate. It walks outward from 0 and takes the first canonical
-reading: `0` → 0.851, `1` → 0.894, `2` → 0.915, `5` → 0.915, `10` → 0.915 but with 3 wrong
-instead of 2. Past 2 it only trades `none` for error.
-
-> **Known limitation, antisense circles.** A circle transcribed opposite to the gene it sits
-> inside is called backwards by the host-gene rule, which inherits the host's strand. The
-> motif *should* catch these — a real antisense circle carries its own `GT..AG` on the minus
-> strand, reading `CT/AC` on the plus — but it does not rescue the benchmark's two
-> `M_antisense` cases: `generate_dataset.py` builds them as the reverse complement of a
-> plus-strand gene's exon span **without writing minus-strand splice sites**, so the genome
-> there reads `GT/AG` and the truth table's `CT/AC` motif is not present in the sequence.
-> Those two are the residual `wrong` above. On real data the motif is expected to handle
-> them; this benchmark cannot demonstrate it.
+reading: `0` → 0.894, `1` → 0.936, `2` → 0.957, `3` → 0.957, `5` → 0.957, `10` → 0.957 but
+with 1 wrong instead of 0. Accuracy plateaus at 2; past it, slop only trades `none` for
+error.
 
 **SA-tag detector (`sa_detect.py`)**
 

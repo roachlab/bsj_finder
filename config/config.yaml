@@ -66,11 +66,17 @@ mmseqs_static: false
 # Strand accuracy over the 47 true positives of pe150_lowerr_unstr (recall and
 # precision are 0.979/1.000 throughout -- this moves strand only):
 #   neither                       correct 17  wrong 24  none 6   accuracy 0.362
-#   annotation only               correct 40  wrong  1  none 6   accuracy 0.851
-#   motif only                    correct 39  wrong  2  none 6   accuracy 0.830
-#   motif -> annotation           correct 43  wrong  2  none 2   accuracy 0.915
+#   annotation only               correct 40  wrong  2  none 5   accuracy 0.851
+#   motif only                    correct 41  wrong  0  none 6   accuracy 0.872
+#   motif -> annotation           correct 45  wrong  0  none 2   accuracy 0.957
 # The two together beat either alone: the motif resolves junctions no gene contains,
 # the annotation resolves junctions with no canonical motif.
+#
+# The ORDER matters, and the M_antisense circles are why. A circle transcribed
+# opposite to the gene it sits inside carries its own GT..AG on the minus strand,
+# reading CT/AC on the plus -- the motif gets it right and the host-gene rule cannot,
+# since it can only report the host's '+'. Motif-first scores 6/6 on minus-strand
+# truth junctions; annotation-first scores 4/6 and is wrong on both antisense cases.
 #
 # Ignored for forward/reverse libraries, whose strand the read already determines.
 # annotation: /path/to/genes.gtf
@@ -79,19 +85,10 @@ mmseqs_static: false
 # left-aligns it, so the spliceosomal pair can sit a shift away from the reported
 # coordinate. motif_slop walks outward from 0 and takes the first shift that reads
 # canonical. Measured on pe150_lowerr_unstr (motif -> annotation):
-#   slop 0 -> 0.851 (1 wrong) | 1 -> 0.894 | 2 -> 0.915 (2 wrong) | 5 -> 0.915
-#   slop 10 -> 0.915 but 3 wrong -- past 2 it only trades 'none' for error
+#   slop 0 -> 0.894 | 1 -> 0.936 | 2 -> 0.957 | 3 -> 0.957 | 5 -> 0.957
+#   slop 10 -> 0.957 but 1 wrong instead of 0 -- past 2 it only trades 'none'
+#   for error, and 2 is where accuracy plateaus
 motif_slop: 2
-
-# KNOWN LIMITATION, antisense circles. A circle transcribed opposite to the gene it
-# sits inside is called backwards by the host-gene rule, which inherits the host's
-# strand. The motif SHOULD catch these (a real antisense circle carries its own
-# GT..AG on the minus strand, reading CT/AC on the plus), but it does not rescue the
-# benchmark's two M_antisense cases: generate_dataset.py builds them as the reverse
-# complement of a plus-strand gene's exon span WITHOUT writing minus-strand splice
-# sites, so the genome there reads GT/AG and the truth table's "CT/AC" motif is not
-# actually present in the sequence. Those 2 are the residual `wrong` above. On real
-# data the motif is expected to handle them; the benchmark cannot show it.
 
 # Cross-sample junction identity ───────────────────────────────────────────
 # Breakpoint slop (bp) within which two cluster members count as the SAME locus,
