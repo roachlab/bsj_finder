@@ -25,7 +25,10 @@ rule minimap2_alig:
         # Snakefile. The shell still reads the params copies, so its `-s` guards are
         # unchanged; this exists so Snakemake TRACKS R2/RS as real dependencies.
         unpack(renamed_reads),
-        genome = config['genome'],
+        # The prebuilt index, not the fasta: minimap2 previously rebuilt a multi-Gb
+        # index for every sample (38x on the devil set). -k/-w now come from the index,
+        # so minimap2 warns they are overridden -- expected, it was built with the same.
+        genome = os.path.join(out_dir, "ref", "genome.mmi"),
     output:
         bam = os.path.join(out_dir, "align_results", "{sample}.bam")
     conda:

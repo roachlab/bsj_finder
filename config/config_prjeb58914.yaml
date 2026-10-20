@@ -37,6 +37,13 @@ outdir: results_prjeb58914
 # what invalidated the 2026-09-16 Tasmanian devil run.
 fastp_min_len: 90
 
+# Library strandedness ────────────────────────────────────────────────────
+# auto = detect_strandedness measures it PER SAMPLE from the reads and the reference
+# (ts:A splice-motif orientation of R1; no annotation needed) and refuses to guess if
+# the signal is weak or ambiguous. Set a literal value instead to ASSERT one: the
+# detection still runs and the run fails if the reads disagree.
+library_strandedness: auto
+
 # BSJ detection thresholds ────────────────────────────────────────────────
 min_align_len: 20      # hg38: a 12 bp arm matches a 3 Gb genome by chance
 min_mapq: 1

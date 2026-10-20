@@ -32,6 +32,17 @@ outdir: results_gbm
 # GBM reads are 150 bp NovaSeq, so 90 (60% of read length) is comfortable.
 fastp_min_len: 90
 
+# Library strandedness ────────────────────────────────────────────────────
+# reverse = R1 antisense (dUTP / TruSeq Stranded). The junction strand is flipped;
+# without it every junction is reported on the wrong strand. Confirmed two ways on
+# GBM sample 150: minimap2 ts:A splice-motif orientation (R1 96.2% antisense) and
+# exonic reads vs GENCODE v44 gene strand (R1 97.2% antisense).
+# Left as a literal rather than `auto` so it acts as an ASSERTION: detect_strandedness
+# still runs per sample and the run FAILS if any sample disagrees.
+# NB R2 is reverse-complemented for ALL paired samples regardless of this setting --
+# see the LIBRARY STRANDEDNESS block in the Snakefile.
+library_strandedness: reverse
+
 # BSJ detection thresholds ────────────────────────────────────────────────
 min_align_len: 20      # hg38: raised from the benchmark's 12 -- a 12 bp arm matches a 3 Gb genome by chance
 min_mapq: 1

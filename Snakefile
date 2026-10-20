@@ -33,6 +33,31 @@ if not samples:
 SAMPLES = sorted(samples.keys())
 print(f"Samples detected ({len(SAMPLES)}): {SAMPLES}")
 
+# ─────────────────────────────────────────────────────────────────────────────
+# SAMPLE EXCLUSION
+#
+# Drop named samples without touching readDirectory. Excluding via a curated
+# symlink directory (as the PRJEB58914 subsets do) would change every remaining
+# sample's INPUT PATH, which is a Snakemake rerun trigger -- so a purely
+# bookkeeping change would discard all banked alignment work. Naming them here
+# leaves the paths identical and the existing outputs valid.
+#
+# The reason for each exclusion belongs in the config next to the name.
+# ─────────────────────────────────────────────────────────────────────────────
+EXCLUDE = set(config.get("exclude_samples") or [])
+if EXCLUDE:
+    unknown = EXCLUDE - set(SAMPLES)
+    if unknown:
+        # A typo here would silently exclude nothing, so fail instead.
+        raise ValueError(
+            f"exclude_samples names {sorted(unknown)}, which are not in {READ_DIR}. "
+            f"Known samples: {SAMPLES}"
+        )
+    SAMPLES = [s for s in SAMPLES if s not in EXCLUDE]
+    print(f"  excluded {len(EXCLUDE)}: {sorted(EXCLUDE)} -> {len(SAMPLES)} samples remain")
+    if not SAMPLES:
+        raise ValueError("exclude_samples removed every sample")
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PAIRED-END / SINGLE-END PARTITION
@@ -133,7 +158,49 @@ else:
     print(f"mmseqs2: conda env ({MMSEQS_CONDA})")
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# LIBRARY STRANDEDNESS
+#
+# Two separate things depend on this, and they are easy to conflate:
+#
+# 1. R2 IS ALWAYS REVERSE-COMPLEMENTED for paired samples (rename_read_ids_pe),
+#    independent of this setting. Reads are aligned SINGLE-END, so an FR-oriented
+#    fragment puts its mates on opposite genomic strands and the same junction gets
+#    called twice, once per strand. Measured before the fix: 54.35% of GBM summary
+#    rows and 5.60% of Tasmanian devil rows were +/- duplicate pairs, 98.9% of them
+#    sharing overlap_trimmed_nt, with support split between the two entries. In 8
+#    devil samples, 82.2% of both-strand coordinates had each mate on exactly one
+#    strand -- the signature of this artefact. RC'ing R2 makes a fragment's mates
+#    agree, collapsing the pair. Single-end samples are unaffected.
+#
+# 2. THIS SETTING decides how the resulting strand is INTERPRETED, and is applied
+#    in sa_detect.py:
+#      reverse    - R1 is antisense (dUTP / TruSeq Stranded). The junction strand is
+#                   FLIPPED, because it otherwise follows R1's orientation.
+#      forward    - R1 is sense (ligation-based). Reported as aligned.
+#      unstranded - read orientation carries no strand information. Reported as
+#                   aligned, but the strand column is NOT meaningful: R1 itself is
+#                   randomly oriented, so RC'ing R2 cannot collapse everything and
+#                   residual +/- duplicates are expected.
+#
+# Both real datasets measured so far are `reverse`, confirmed two independent ways
+# on GBM sample 150: minimap2 ts:A splice-motif orientation (R1 96.2% antisense) and
+# exonic reads vs GENCODE v44 gene strand (R1 97.2% antisense). The splice-motif
+# method needs no annotation and is the one to use on genomes that lack one.
+# ─────────────────────────────────────────────────────────────────────────────
+STRANDEDNESS = str(config.get("library_strandedness", "auto")).strip().lower()
+if STRANDEDNESS not in ("auto", "forward", "reverse", "unstranded"):
+    raise ValueError(
+        f"library_strandedness must be auto, forward, reverse or unstranded "
+        f"(got {STRANDEDNESS!r})."
+    )
+print(f"library strandedness: {STRANDEDNESS}"
+      + (" (detected per sample by detect_strandedness)" if STRANDEDNESS == "auto"
+         else " (declared; detection still runs and fails on disagreement)"))
+
+
 include: "workflow/rules/trimnami_trim.smk"
+include: "workflow/rules/strandedness.smk"
 include: "workflow/rules/minimap2_alig.smk"
 include: "workflow/rules/detect_bsj_cor.smk"
 include: "workflow/rules/extract_bsj_seq.smk"

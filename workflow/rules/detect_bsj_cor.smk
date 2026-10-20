@@ -1,7 +1,7 @@
 # Detect back-splice junctions from the minimap2 BAM using the SA-tag / soft-clip parser.
 # Consumes the unsorted, SA-filtered BAM from minimap2_alig and emits one row per
 # supporting read in the bsj_cor schema (q_id, bsj_coord, chromosome, s_start, s_end,
-# s_strand, overlap_trimmed_nt) consumed by extract_bsj_seq. sa_detect.py is stdlib-only
+# s_strand, overlap_trimmed_nt, mapq) consumed by extract_bsj_seq. sa_detect.py is stdlib-only
 # and reads SAM text on stdin, so samtools streams the BAM back out as SAM for it; the
 # shared minimap2 env supplies samtools.
 #
@@ -20,7 +20,10 @@
 
 rule detect_bsj_cor:
     input:
-        bam = os.path.join(out_dir, "align_results", "{sample}.bam")
+        bam = os.path.join(out_dir, "align_results", "{sample}.bam"),
+        # An INPUT, not a param: params are resolved during DAG construction, before
+        # detect_strandedness has run, so they cannot carry a computed verdict.
+        strandedness = os.path.join(out_dir, "qc_results", "{sample}.strandedness.tsv")
 
     output:
         tsv = os.path.join(out_dir, "bsj_results", "{sample}.bsj_cor.tsv.gz")
@@ -39,7 +42,18 @@ rule detect_bsj_cor:
         min_mapq      = config.get("min_mapq",           1),
         max_gap_size  = config.get("max_gap_size",  100000),   # max genomic span of a circle
         max_read_gap  = config.get("sa_max_read_gap",   15),   # max unaligned gap between arms (read bp)
-        max_read_ovlp = config.get("sa_max_read_ovlp",  15)    # max arm overlap / microhomology (read bp)
+        max_read_ovlp = config.get("sa_max_read_ovlp",  15),   # max arm overlap / microhomology (read bp)
+        # Strand inference for a library detect_strandedness calls `unstranded`.
+        # Such a library's aligned strand is a coin flip, so the strand comes from
+        # the genome instead: the splice motif at the breakpoints first, the host
+        # gene's strand from `annotation` second (see StrandInferrer). Both are
+        # params, not inputs -- they are static reference files the pipeline never
+        # builds, so making them inputs would add a missing-file failure for every
+        # dataset that legitimately has no annotation. The genome is the FASTA, not
+        # the .mmi the aligner consumes, since this reads bases rather than aligns.
+        genome        = config["genome"],
+        annotation    = config.get("annotation", None),
+        motif_slop    = config.get("motif_slop", 2)
 
     script:
         os.path.join("..", "scripts", "sa_detect.py")

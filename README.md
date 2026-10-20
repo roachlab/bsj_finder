@@ -234,6 +234,51 @@ logs/             per-rule logs
 | `s_end` | circle end (max genomic breakpoint) |
 | `s_strand` | strand |
 | `overlap_trimmed_nt` | microhomology overlap trimmed from the downstream breakpoint |
+| `mapq` | MAPQ of the worse-anchored of the two arms (a junction is only as well placed as its weaker side) |
+
+**`all_samples.bsj_summary.tsv` schema** (one row per unique junction, pooled across samples):
+
+| column | meaning |
+|--------|---------|
+| `chromosome`, `s_start`, `s_end`, `s_strand` | the junction coordinate (the row key) |
+| `overlap_trimmed_nt` | widest microhomology window any supporting read reported |
+| `n_reads` | concordant supporting reads (cluster members at this locus) |
+| `n_samples` | distinct samples among those reads |
+| `n_loci` | distinct loci in the sequence cluster; `1` is clean, `>1` means the clustering merged coordinates that disagree |
+| `mapq` | best `mapq` among the supporting reads |
+| `confidence` | `high` / `medium` / `low`, from `n_reads` and `mapq` together (see below) |
+
+**Confidence tiers.** Advisory only — nothing is dropped (`bsj_min_reads` does that).
+A junction is `high` if it clears both `bsj_high_*` cuts, `medium` if it clears both
+`bsj_med_*` cuts, otherwise `low`. Measured on GBM (550,017 junctions) against the human
+circRNA databases, with the defaults (6 reads / MAPQ 10 and 2 reads / MAPQ 10):
+
+| tier | rule | rows | database-matched |
+|------|------|------|------------------|
+| `high` | `n_reads>=6 & mapq>=10` | 23,434 (4.3%) | **96.5%** |
+| `medium` | `n_reads>=2 & mapq>=10` | 52,083 (9.5%) | 78.4% |
+| `low` | everything else | 474,500 (86.3%) | 15.1% |
+
+Read support does nearly all the discrimination — marginally 14.6% matched at one read,
+70.3% at two, 85.2% at 3–5, 96.3% at 6–19, 98.5% at 20+. MAPQ is a **floor, not a
+gradient**: clearing 10 is worth 9–11 points at two reads and up, while 30 versus 60 is
+worth nothing. The cuts therefore sit on read support at its two biggest inflections
+(1→2 and 3–5→6–19) with a light MAPQ floor, which makes `low` in effect the single-read
+junctions. The full grid:
+
+| `mapq` \ `n_reads` | 1 | 2 | 3–5 | 6–19 | 20+ |
+|---|---|---|---|---|---|
+| 1–9 | 13.6% | 61.4% | 74.6% | 88.1% | 100.0% |
+| 10–29 | 14.8% | 68.5% | 82.5% | 94.5% | 98.9% |
+| 30–59 | 15.2% | 73.0% | 86.2% | 96.4% | 98.7% |
+| 60 | 15.4% | 72.9% | 87.7% | 97.1% | 98.0% |
+
+> Note `mapq` is the **limiting arm's** (the lower of the two), which runs well below the
+> primary alignment's — a read whose primary scores 60 routinely has a limiting arm in the
+> single digits. Thresholds calibrated on a primary-MAPQ scale do not transfer.
+
+Lower the cuts for short-read libraries (e.g. 75 bp), which do not reach the same
+per-junction depth.
 
 To aggregate per-read rows into **junction-level calls** (clustering breakpoints and summing read
 support), see `benchmark/bsj_finder_to_bed.py` in the `BSJ_test_dataset` submodule.
@@ -251,6 +296,53 @@ Set via `config/config.yaml` or `--config key=value`.
 | `genome` | — | Reference FASTA (.gz ok). |
 | `readDirectory` | — | Directory of input FASTQs. |
 | `outdir` | `results` | Output directory. |
+| `annotation` | — | GTF/GFF (.gz ok). Optional; the *fallback* for junction strand in an unstranded library (see below). |
+| `motif_slop` | `2` | bp to shift both breakpoints when looking for a canonical splice motif. |
+
+**Junction strand in an unstranded library.** A forward or reverse library determines a
+junction's strand from the read itself. An unstranded one cannot: it sequences sense and
+antisense in equal measure, so a supporting read's aligned strand is a coin flip — on the
+benchmark's `pe150_lowerr_unstr` library the per-read split is 572 `+` to 595 `-` for
+junctions that are overwhelmingly `+`. The detector infers it from the genome instead, in
+priority order:
+
+1. **Splice motif** at the two breakpoints. On the transcript's own strand a major intron
+   reads `GT..AG` and a minor (U12) one `AT..AC`; read off the plus strand, a minus-strand
+   circle shows the reverse complement with donor and acceptor swapping ends. The four
+   pairs — `(GT,AG)` `(AT,AC)` `(CT,AC)` `(GT,AT)` — are distinct, so the pair names the
+   strand outright. This uses `genome`, which is always configured, so it needs no setup.
+2. **Host gene** from `annotation` — the strand of the single annotated gene *containing*
+   both breakpoints (containment, not overlap: a gene covering one breakpoint is a
+   neighbour, not a host). Covers non-canonical junctions, which are real but carry no
+   spliceosomal signature.
+3. **`.`** when neither resolves it. Still orientation-independent, so the junction
+   collapses to one call rather than splitting across both strands.
+
+Strand accuracy over the 47 true positives of that library (recall 0.979 / precision 1.000
+throughout — this moves strand only):
+
+| | correct | wrong | none | accuracy | minus-strand |
+|---|---|---|---|---|---|
+| neither | 17 | 24 | 6 | 0.362 | 3/6 |
+| `annotation` only | 40 | 2 | 5 | 0.851 | 4/6 |
+| motif only | 41 | 0 | 6 | 0.872 | 6/6 |
+| **motif → `annotation`** | **45** | **0** | 2 | **0.957** | **6/6** |
+
+The two together beat either alone: the motif resolves junctions no gene contains, the
+annotation resolves junctions with no canonical motif.
+
+**The order matters**, and the `M_antisense` circles are why. A circle transcribed opposite
+to the gene it sits inside carries its own `GT..AG` on the minus strand, reading `CT/AC` on
+the plus — the motif gets it right, and the host-gene rule cannot, since it can only report
+the host's `+`. That is the whole minus-strand column above: motif-first scores 6/6, while
+annotation alone scores 4/6 and is wrong on both antisense cases.
+
+`motif_slop` (default `2`) exists because microhomology makes a breakpoint ambiguous over a
+few bases and the detector left-aligns it, so the spliceosomal pair can sit a shift away
+from the reported coordinate. It walks outward from 0 and takes the first canonical
+reading: `0` → 0.894, `1` → 0.936, `2` → 0.957, `3` → 0.957, `5` → 0.957, `10` → 0.957 but
+with 1 wrong instead of 0. Accuracy plateaus at 2; past it, slop only trades `none` for
+error.
 
 **SA-tag detector (`sa_detect.py`)**
 
@@ -287,6 +379,17 @@ Set via `config/config.yaml` or `--config key=value`.
 > It is a property of the **host**, not of the dataset, so leave it `false` unless
 > `grep avx2 /proc/cpuinfo` comes up empty. If it is on and the binary is missing, the workflow
 > fails at parse time rather than mid-run.
+
+**Summary table (`bsj_summary.py`)**
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `bsj_locus_tol` | `10` | Breakpoint slop (bp) within which two cluster members count as the same locus, for `n_loci`. |
+| `bsj_min_reads` | `1` | Drop junctions below this many concordant supporting reads. `1` = keep everything. |
+| `bsj_high_min_reads` | `6` | Reads required for the `high` tier. |
+| `bsj_high_min_mapq` | `10` | Best-read MAPQ required for the `high` tier. |
+| `bsj_med_min_reads` | `2` | Reads required for the `medium` tier. |
+| `bsj_med_min_mapq` | `10` | Best-read MAPQ required for the `medium` tier. |
 
 **Polishing (`samtools`/`bcftools`)**
 
