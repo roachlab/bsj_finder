@@ -191,8 +191,8 @@ rule bsj_summary_table:
         min_reads = config.get("bsj_min_reads", 1),
         # Confidence tiering (advisory -- adds a column, drops nothing). See the
         # bsj_summary.py docstring for the measured match-rate grid these follow.
-        high_min_reads = config.get("bsj_high_min_reads", 3),
-        high_min_mapq  = config.get("bsj_high_min_mapq", 30),
+        high_min_reads = config.get("bsj_high_min_reads", 6),
+        high_min_mapq  = config.get("bsj_high_min_mapq", 10),
         med_min_reads  = config.get("bsj_med_min_reads", 2),
         med_min_mapq   = config.get("bsj_med_min_mapq", 10),
     # Stdlib-only script (like sa_detect.py) -- no conda env required, so it runs under

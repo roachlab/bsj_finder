@@ -50,38 +50,40 @@ this column takes the best such value a junction achieved, i.e. the quality of i
 strongest single piece of evidence.
 
 `confidence` tiers a junction on read support AND placement quality together, the
-two axes that actually separate signal from noise.
-
-PROVISIONAL THRESHOLDS. The grid below was measured against the PRIMARY alignment's
-MAPQ, which is what was to hand when the tiers were designed. The column this script
-actually reads is the LIMITING arm's MAPQ (min of the two arms), which runs
-substantially lower -- reads whose primary scores 60 give limiting-arm values in the
-single digits to the fifties. The shape of the grid holds but the cut points do not;
-they are recalibrated against the limiting-arm metric in a follow-up commit, from a
-GBM rerun with the new detector. Treat the numbers below as the design rationale,
-not as the measured performance of these defaults.
-
-Measured on GBM (552,600 junctions, scored against the human circRNA databases as a
-truth proxy), match rate over the two axes:
+two axes that separate signal from noise. Measured on GBM (550,017 junctions,
+scored against the human circRNA databases as a truth proxy), match rate over the
+two axes:
 
     mapq / n_reads        1          2        3-5       6-19        20+
-          0-9         10.4%      39.6%      50.0%      46.8%          -
-        10-29         11.6%      44.3%      60.8%      84.2%          -
-        30-59         14.0%      54.8%      68.7%      91.8%     100.0%
-           60         15.1%      72.2%      86.1%      96.4%      98.7%
+          1-9         13.6%      61.4%      74.6%      88.1%     100.0%
+        10-29         14.8%      68.5%      82.5%      94.5%      98.9%
+        30-59         15.2%      73.0%      86.2%      96.4%      98.7%
+           60         15.4%      72.9%      87.7%      97.1%      98.0%
 
-Read support is the dominant axis and MAPQ modulates within it: at one read MAPQ
-barely helps (10.4% -> 15.1%), but from two reads up it is worth 20-30 points. The
-defaults follow that shape --
+Read support does nearly all the discrimination -- marginally 14.6% at one read,
+70.3% at two, 85.2% at 3-5, 96.3% at 6-19, 98.5% at 20+. MAPQ is a floor rather
+than a gradient: clearing 10 is worth 9-11 points at two reads and up, while 30
+versus 60 is worth nothing. The defaults therefore cut on reads at the two biggest
+inflections (1 -> 2 and 3-5 -> 6-19) with a light MAPQ floor:
 
-    high    n_reads >= 3 AND mapq >= 30     50,273 rows ( 9.1%)   90.6% match
-    medium  n_reads >= 2 AND mapq >= 10     29,533 rows ( 5.4%)   70.4% match
-    low     everything else                470,135 rows (85.5%)   14.7% match
+    high    n_reads >= 6 AND mapq >= 10     23,434 rows ( 4.3%)   96.5% match
+    medium  n_reads >= 2 AND mapq >= 10     52,083 rows ( 9.5%)   78.4% match
+    low     everything else                474,500 rows (86.3%)   15.1% match
 
-No row is dropped: tiering is advisory and orthogonal to `min_reads`, which does
-drop rows. Thresholds are configurable (bsj_high_min_reads / bsj_high_min_mapq /
-bsj_med_min_reads / bsj_med_min_mapq) because the right cut is dataset-dependent --
-a 75 bp library will not reach the same support depth as a 150 bp one.
+How the truth proxy was built, since the numbers above are only reproducible with
+it: the pool's polished representatives were aligned (minimap2 -ax sr) against the
+circRNA databases' junction windows, and a junction counts as matched when a primary
+alignment spans the window's junction midpoint with >=70 aligned bases and <=5
+mismatches. It must be rebuilt from the SAME run it scores -- read ids are NOT
+stable across runs (rename_read_ids_pe numbers sequentially, so any change upstream
+shifts them), and reusing an earlier run's matched-read set silently loses about a
+quarter of the join.
+
+`low` is, in effect, the single-read junctions. No row is dropped: tiering is
+advisory and orthogonal to `min_reads`, which does drop rows. Thresholds are
+configurable (bsj_high_min_reads / bsj_high_min_mapq / bsj_med_min_reads /
+bsj_med_min_mapq) because the right cut is dataset-dependent -- a 75 bp library
+will not reach the support depth of a 150 bp one.
 
 A row is keyed on the 4-field coordinate (chromosome, s_start, s_end, s_strand)
 ONLY. `overlap_trimmed_nt` is a property of the supporting READ -- how much
@@ -161,7 +163,7 @@ def confidence_of(n_reads, mapq, high_min_reads, high_min_mapq,
 
 
 def main(cor, pool_fasta, pool_cluster, out, locus_tol=10, min_reads=1,
-         high_min_reads=3, high_min_mapq=30, med_min_reads=2, med_min_mapq=10):
+         high_min_reads=6, high_min_mapq=10, med_min_reads=2, med_min_mapq=10):
     """cor: list of per-sample bsj_cor.tsv.gz; the rest are single paths."""
 
     # ── 1) Index bsj_cor: (q_id, bsj_coord) -> (chrom, s_start, s_end, s_strand, overlap, mapq) ──
@@ -319,8 +321,8 @@ def _from_cli():
                     help="breakpoint slop (bp) within which two member coordinates are "
                          "the same locus (default 10; microhomology wobble is typically "
                          "<=10bp, real false merges are far larger)")
-    ap.add_argument("--high-min-reads", type=int, default=3)
-    ap.add_argument("--high-min-mapq", type=int, default=30,
+    ap.add_argument("--high-min-reads", type=int, default=6)
+    ap.add_argument("--high-min-mapq", type=int, default=10,
                     help="a junction needs at least --high-min-reads supporting reads "
                          "AND a best-read MAPQ of at least this to be tiered 'high'")
     ap.add_argument("--med-min-reads", type=int, default=2)

@@ -250,26 +250,35 @@ logs/             per-rule logs
 
 **Confidence tiers.** Advisory only — nothing is dropped (`bsj_min_reads` does that).
 A junction is `high` if it clears both `bsj_high_*` cuts, `medium` if it clears both
-`bsj_med_*` cuts, otherwise `low`.
+`bsj_med_*` cuts, otherwise `low`. Measured on GBM (550,017 junctions) against the human
+circRNA databases, with the defaults (6 reads / MAPQ 10 and 2 reads / MAPQ 10):
 
-> **Provisional.** The cut points below were calibrated against the *primary* alignment's
-> MAPQ, while the column actually written is the *limiting arm's* (the lower of the two),
-> which runs substantially lower. The shape of the relationship holds; the thresholds are
-> being recalibrated against the limiting-arm metric.
+| tier | rule | rows | database-matched |
+|------|------|------|------------------|
+| `high` | `n_reads>=6 & mapq>=10` | 23,434 (4.3%) | **96.5%** |
+| `medium` | `n_reads>=2 & mapq>=10` | 52,083 (9.5%) | 78.4% |
+| `low` | everything else | 474,500 (86.3%) | 15.1% |
 
-Measured on GBM against the human circRNA databases, the defaults
-(3 reads / MAPQ 30 and 2 reads / MAPQ 10) give:
+Read support does nearly all the discrimination — marginally 14.6% matched at one read,
+70.3% at two, 85.2% at 3–5, 96.3% at 6–19, 98.5% at 20+. MAPQ is a **floor, not a
+gradient**: clearing 10 is worth 9–11 points at two reads and up, while 30 versus 60 is
+worth nothing. The cuts therefore sit on read support at its two biggest inflections
+(1→2 and 3–5→6–19) with a light MAPQ floor, which makes `low` in effect the single-read
+junctions. The full grid:
 
-| tier | rows | database-matched |
-|------|------|------------------|
-| `high` | 50,273 (9.1%) | 90.6% |
-| `medium` | 29,533 (5.4%) | 70.4% |
-| `low` | 470,135 (85.5%) | 14.7% |
+| `mapq` \ `n_reads` | 1 | 2 | 3–5 | 6–19 | 20+ |
+|---|---|---|---|---|---|
+| 1–9 | 13.6% | 61.4% | 74.6% | 88.1% | 100.0% |
+| 10–29 | 14.8% | 68.5% | 82.5% | 94.5% | 98.9% |
+| 30–59 | 15.2% | 73.0% | 86.2% | 96.4% | 98.7% |
+| 60 | 15.4% | 72.9% | 87.7% | 97.1% | 98.0% |
 
-Read support is the dominant axis and MAPQ modulates within it: at one supporting read
-MAPQ is worth almost nothing (10.4% → 15.1% match across the whole MAPQ range), but from
-two reads up it is worth 20–30 points. Lower the cuts for short-read libraries, which do
-not reach the same per-junction depth.
+> Note `mapq` is the **limiting arm's** (the lower of the two), which runs well below the
+> primary alignment's — a read whose primary scores 60 routinely has a limiting arm in the
+> single digits. Thresholds calibrated on a primary-MAPQ scale do not transfer.
+
+Lower the cuts for short-read libraries (e.g. 75 bp), which do not reach the same
+per-junction depth.
 
 To aggregate per-read rows into **junction-level calls** (clustering breakpoints and summing read
 support), see `benchmark/bsj_finder_to_bed.py` in the `BSJ_test_dataset` submodule.
@@ -377,8 +386,8 @@ error.
 |-----|---------|---------|
 | `bsj_locus_tol` | `10` | Breakpoint slop (bp) within which two cluster members count as the same locus, for `n_loci`. |
 | `bsj_min_reads` | `1` | Drop junctions below this many concordant supporting reads. `1` = keep everything. |
-| `bsj_high_min_reads` | `3` | Reads required for the `high` tier. |
-| `bsj_high_min_mapq` | `30` | Best-read MAPQ required for the `high` tier. |
+| `bsj_high_min_reads` | `6` | Reads required for the `high` tier. |
+| `bsj_high_min_mapq` | `10` | Best-read MAPQ required for the `high` tier. |
 | `bsj_med_min_reads` | `2` | Reads required for the `medium` tier. |
 | `bsj_med_min_mapq` | `10` | Best-read MAPQ required for the `medium` tier. |
 
