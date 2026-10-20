@@ -407,8 +407,32 @@ error.
 
 `bsj_finder` is benchmarked against **CIRI2** and **CIRCexplorer2** on a synthetic dataset (a
 ~1.5 Mbp toy genome, 48 truth back-splice junctions across categories A–M plus 39 decoys, 8 library
-types = {PE, SE} × {150, 100} bp × {low, high error}). Harness and data live in the
-[`BSJ_test_dataset`](https://github.com/roachlab/BSJ_test_dataset) submodule.
+types = {PE, SE} × {150, 100} bp × {low, high error}, plus 4 strandedness variants — `*_rev`
+(dUTP, R1 antisense) and `*_unstr` — that re-emit the same fragments as their `*150_lowerr` base).
+Harness and data live in the [`BSJ_test_dataset`](https://github.com/roachlab/BSJ_test_dataset)
+submodule.
+
+### Running it against this repo
+
+```bash
+git submodule update --init BSJ_test_dataset
+cd BSJ_test_dataset/benchmark
+THREADS=8 bash run_bsj_finder.sh ../dataset results/bsj_finder
+```
+
+`run_bsj_finder.sh` drives **this** checkout: its `BSJ_FINDER` defaults to `../..`, the repo the
+submodule sits in. It runs each library through the real pipeline to the detection target
+(`bsj_results/<lib>.bsj_cor.tsv.gz`), converts that to BED6 and scores it, passing
+`genome=` and `annotation=` so unstranded libraries get both strand-inference sources.
+`snakemake` must be on `PATH`; everything else comes from `--use-conda`.
+
+> The submodule pins a **separate copy of `bsj_finder`** at `BSJ_test_dataset/bsj_finder/`, which
+> `benchmark/config.yaml` refers to as `bsj_finder_dir`. That copy is the test-dataset repo's own
+> reference version, not this one. Use `run_bsj_finder.sh` as above (or set `BSJ_FINDER`
+> explicitly) to benchmark the working tree you are developing in.
+
+Outputs land in `BSJ_test_dataset/benchmark/results/`, which that repo git-ignores, so a run
+leaves both working trees clean.
 
 Mean over the 8 libraries (48-junction truth):
 
@@ -418,6 +442,23 @@ Mean over the 8 libraries (48-junction truth):
 | CIRCexplorer2 (de-novo) | 0.77 | 0.89 | 0.81 | 0.99 |
 | CIRI2 | 0.71 | 1.00 | 0.83 | 1.00 |
 | CIRCexplorer2 (known) | 0.62 | 1.00 | 0.76 | 1.00 |
+
+### Strand accuracy
+
+Measured on this repo at `920f0c6` over all 12 libraries. The evaluator matches junctions
+strand-blind and scores the reported strand separately, so these move independently of
+recall/precision:
+
+| libraries | strand accuracy | correct / wrong / none |
+|---|---|---|
+| 8 forward-stranded | **1.000** | 47 / 0 / 0 (typical) |
+| 2 reverse-stranded (`*_rev`) | **1.000** | 47 / 0 / 0 |
+| 2 unstranded (`*_unstr`) | 0.957 | 45 / **0** / 2 |
+
+**No library reports a wrong strand.** The unstranded pair falls short of 1.000 only through two
+`.` calls — `BSJ_M_ig1`/`ig2`, the intergenic circles, which have non-canonical motifs *and* no
+containing gene, so neither inference source can reach them and the pipeline declines to guess.
+`library_strandedness: auto` correctly classified all 12 protocols from the reads alone.
 
 `bsj_finder` leads on **recall** and **F1**. It is uniquely strong on **intronic ciRNA** and other
 non-canonical categories where motif-dependent callers score zero. Precision depends on how tightly
