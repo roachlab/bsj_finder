@@ -50,25 +50,31 @@ this column takes the best such value a junction achieved, i.e. the quality of i
 strongest single piece of evidence.
 
 `confidence` tiers a junction on read support AND placement quality together, the
-two axes that separate signal from noise. Measured on GBM (550,017 junctions,
+two axes that separate signal from noise. Measured on GBM (549,923 junctions,
 scored against the human circRNA databases as a truth proxy), match rate over the
 two axes:
 
     mapq / n_reads        1          2        3-5       6-19        20+
-          1-9         13.6%      61.4%      74.6%      88.1%     100.0%
-        10-29         14.8%      68.5%      82.5%      94.5%      98.9%
-        30-59         15.2%      73.0%      86.2%      96.4%      98.7%
-           60         15.4%      72.9%      87.7%      97.1%      98.0%
+          1-9         13.6%      61.9%      73.9%      88.3%     100.0%
+        10-29         14.8%      68.3%      82.6%      94.5%      98.8%
+        30-59         15.2%      73.1%      86.1%      96.4%      98.7%
+           60         15.3%      73.0%      87.6%      97.1%      97.9%
 
 Read support does nearly all the discrimination -- marginally 14.6% at one read,
-70.3% at two, 85.2% at 3-5, 96.3% at 6-19, 98.5% at 20+. MAPQ is a floor rather
+70.4% at two, 85.2% at 3-5, 96.3% at 6-19, 98.5% at 20+. MAPQ is a floor rather
 than a gradient: clearing 10 is worth 9-11 points at two reads and up, while 30
 versus 60 is worth nothing. The defaults therefore cut on reads at the two biggest
 inflections (1 -> 2 and 3-5 -> 6-19) with a light MAPQ floor:
 
-    high    n_reads >= 6 AND mapq >= 10     23,434 rows ( 4.3%)   96.5% match
-    medium  n_reads >= 2 AND mapq >= 10     52,083 rows ( 9.5%)   78.4% match
-    low     everything else                474,500 rows (86.3%)   15.1% match
+    high    n_reads >= 6 AND mapq >= 10     23,430 rows ( 4.3%)   96.5% match
+    medium  n_reads >= 2 AND mapq >= 10     52,057 rows ( 9.5%)   78.4% match
+    low     everything else                474,436 rows (86.3%)   15.1% match
+
+These figures are stable across the fastp --dedup removal (c402865): that change
+let 2.1% more junction-supporting reads through to detection, but the catalogue
+and every cell of the grid above moved by less than half a point, because
+mmseqs2_dedup downstream was already collapsing the same redundancy. The tier
+cuts are therefore not sensitive to read-level duplicate handling.
 
 How the truth proxy was built, since the numbers above are only reproducible with
 it: the pool's polished representatives were aligned (minimap2 -ax sr) against the
