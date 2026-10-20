@@ -100,9 +100,8 @@ Per sample, the DAG is:
 Stage notes:
 
 1. **Trim** — `fastp` with quality/length filtering (`--qualified_quality_phred 15
-   --length_required 90`), tail quality trimming, poly-X trimming, PE adapter auto-detection, and
-   duplicate removal (`--dedup --dup_calc_accuracy 4`). SE and PE are detected automatically; unpaired
-   mates from PE trimming are kept as `_RS` orphans.
+   --length_required 90`), tail quality trimming, poly-X trimming and PE adapter auto-detection.
+   SE and PE are detected automatically; unpaired mates from PE trimming are kept as `_RS` orphans.
 2. **Rename** — read IDs are made deterministic (`{sample}.1./.2./.S.`) so downstream steps and read
    pairing are stable.
 3. **Align** — all trimmed reads are concatenated and aligned **single-end** in SAM mode so that the
