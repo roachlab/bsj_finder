@@ -53,8 +53,7 @@ min_mapq: 1
 # 11/5 -- seeding tuned for the 1.5 Mb benchmark genome -- which on hg38 is both
 # expensive and over-sensitive. Its results are therefore not comparable with this
 # one, independently of everything else that has changed.
-minimap2_k: 21
-minimap2_w: 11
+preset: fast           # minimap2 -k 21 -w 11 (the `sr` values)
 
 # SA-tag chimeric detector (sa_detect.py) — read-space arm gap/overlap tolerance
 sa_max_read_gap: 20    # max unaligned gap between the two arms (read bp)

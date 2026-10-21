@@ -106,8 +106,9 @@ Stage notes:
    pairing are stable.
 3. **Align** — all trimmed reads are concatenated and aligned **single-end** in SAM mode so that the
    `SA:Z` supplementary tags needed for detection are emitted, then encoded to **BAM** on the fly and
-   filtered to SA-bearing records with `samtools view -d SA`. Dense seeding (`-k 11 -w 5`) surfaces
-   short back-splice arms. The BAM is left **unsorted** — detection is a single streaming pass, so a
+   filtered to SA-bearing records with `samtools view -d SA`. Seeding is set by `preset`:
+   `sensitive` (`-k 11 -w 5`, default) surfaces short back-splice arms; `fast` (`-k 21 -w 11`)
+   is the large-genome choice. The BAM is left **unsorted** — detection is a single streaming pass, so a
    coordinate sort would be wasted work; sort and index it yourself if you want to browse the
    junction arms in IGV.
 
@@ -347,8 +348,9 @@ error.
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `minimap2_k` | `11` | minimap2 `-k` (seed length). Set to `21` (the `sr` preset default) for multi-Gb genomes. |
-| `minimap2_w` | `5` | minimap2 `-w` (minimizer window). Set to `11` for multi-Gb genomes. |
+| `preset` | `sensitive` | Seeding preset: `sensitive` = `-k 11 -w 5` (dense; short/noisy arms, low-coverage circles), `fast` = `-k 21 -w 11` (minimap2 `sr` values; 6-12x faster on large genomes). See below. |
+| `minimap2_k` | from `preset` | minimap2 `-k` (seed length); overrides the preset if set. |
+| `minimap2_w` | from `preset` | minimap2 `-w` (minimizer window); overrides the preset if set. |
 | `min_align_len` | `12` | Minimum aligned bp per arm (the SA detector's per-arm **anchor**). |
 | `min_mapq` | `1` | Minimum MAPQ per arm (short split arms map at low MAPQ). |
 | `sa_max_read_gap` | `20` | Max unaligned gap between the two arms in read space (bp). |
@@ -500,11 +502,20 @@ function have been removed; the filename survives because `extract_bsj_seq.py` i
 
 ## Tuning & caveats
 
-- **Real-genome tuning.** Dense seeding (`-k 11 -w 5`) and a low per-arm anchor (`min_align_len 12`)
-  maximize sensitivity on the small benchmark genome, but on human-scale, repetitive sequence they
-  cost runtime/memory and can admit spurious short-arm calls. Seeding is configurable via
-  `minimap2_k` / `minimap2_w`; for a multi-Gb reference use the `sr` preset values (`21` / `11`),
-  raise `min_align_len` (e.g. to `20`), and raise `max_gap_size` above the longest plausible circle
+- **Seeding presets.** Measured on BSJ_test_dataset (48 true BSJs; 8 threads, one job at a time):
+
+  | | `sensitive` (`-k 11 -w 5`) | `fast` (`-k 21 -w 11`) |
+  |---|---|---|
+  | 150 bp, low error | 46-48 / 48 | 46-48 / 48 |
+  | 150 bp high error, or 100 bp | 44-48 / 48 | 43-45 / 48 (loses 1-3 read circles) |
+  | junction reads reported | baseline | 13-38% fewer |
+  | 36M read pairs, 1 Gbp genome | 2.3 h | 22 min |
+
+  `fast` also gives strandedness auto-detection fewer spliced reads: on small, short, noisy
+  libraries it can fall below the minimum, so declare `library_strandedness` there.
+- **Real-genome tuning.** On human-scale, repetitive sequence the `sensitive` seeding and a low
+  per-arm anchor (`min_align_len 12`) cost runtime/memory and can admit spurious short-arm calls.
+  For a multi-Gb reference use `preset: fast`, raise `min_align_len` (e.g. to `20`), and raise `max_gap_size` above the longest plausible circle
   span (`100000` silently drops circles from long host genes — human genes routinely exceed it).
 - **Read type.** `-ax sr` is an Illumina short-read preset. For long reads (ONT/PacBio) switch to a
   `map-ont`-style preset and re-validate the SA/geometry logic.

@@ -51,8 +51,7 @@ min_mapq: 1
 # `sr` preset defaults. The pipeline default (11 / 5) is far denser and is tuned for the
 # 1.5 Mb benchmark genome; on hg38 it makes the per-job index very large (minimap2 rebuilds
 # it for every sample) and risks OOM at 5 concurrent align jobs.
-minimap2_k: 21
-minimap2_w: 11
+preset: fast           # minimap2 -k 21 -w 11 (the `sr` values)
 
 # SA-tag chimeric detector (sa_detect.py) — read-space arm gap/overlap tolerance
 sa_max_read_gap: 20    # max unaligned gap between the two arms (read bp)

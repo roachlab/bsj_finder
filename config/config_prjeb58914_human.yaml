@@ -52,8 +52,7 @@ min_align_len: 20      # hg38: a 12 bp arm matches a 3 Gb genome by chance
 min_mapq: 1
 
 # minimap2 seeding density ─────────────────────────────────────────────────
-minimap2_k: 21         # `sr` preset values, as for GBM -- 11/5 is benchmark-genome tuning
-minimap2_w: 11
+preset: fast           # minimap2 -k 21 -w 11 (`sr` values); sensitive = 11/5 is benchmark-genome tuning
 
 # SA-tag chimeric detector (sa_detect.py) ──────────────────────────────────
 sa_max_read_gap: 20

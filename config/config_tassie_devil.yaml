@@ -102,8 +102,7 @@ min_mapq: 1
 # 1.5 Mb toy genome, which on a 3 Gb reference costs a lot of RAM and runtime
 # (minimap2 rebuilds the index per job). The 2026-09-19 results were produced that
 # way and are NOT comparable with the GBM run, which used 21 / 11.
-minimap2_k: 21
-minimap2_w: 11
+preset: fast           # minimap2 -k 21 -w 11 (the `sr` values)
 
 # SA-tag chimeric detector (sa_detect.py) — read-space arm gap/overlap tolerance
 # read_suffix is NOT consumed anywhere in the pipeline (only referenced in

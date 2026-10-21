@@ -25,12 +25,15 @@ library_strandedness: auto
 min_align_len: 12
 min_mapq: 1
 
-# minimap2 seeding density ────────────────────────────────────────────────
-# Dense seeding surfaces very short back-splice arms (needed on the small benchmark
-# genome). For multi-Gb references set these to the `sr` preset values (21 / 11):
-# the dense index is memory- and time-expensive and minimap2 rebuilds it per job.
-minimap2_k: 11
-minimap2_w: 5
+# minimap2 seeding preset ─────────────────────────────────────────────────
+#   sensitive  -k 11 -w 5   dense; recovers short / noisy junction arms (default)
+#   fast       -k 21 -w 11  minimap2's `sr` values; 6-12x faster on large genomes, but loses
+#                           low-coverage circles on 100 bp or high-error reads
+# Use `fast` for multi-Gb genomes with >= 150 bp reads. See the Snakefile for the measurements.
+preset: sensitive
+# Explicit values override the preset (leave unset to use it):
+# minimap2_k: 11
+# minimap2_w: 5
 
 # SA-tag chimeric detector (sa_detect.py) — read-space arm gap/overlap tolerance
 sa_max_read_gap: 20    # max unaligned gap between the two arms (read bp)

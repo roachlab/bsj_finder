@@ -199,6 +199,37 @@ print(f"library strandedness: {STRANDEDNESS}"
          else " (declared; detection still runs and fails on disagreement)"))
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# SEEDING PRESET
+#
+# minimap2 seed length (-k) and minimizer window (-w), chosen by name. Measured on
+# BSJ_test_dataset (48 true BSJs; 8 threads, one job at a time):
+#
+#   sensitive  -k 11 -w 5   Dense seeding: recovers short and noisy junction arms. On the
+#                           1.5 Mb test genome 44-48/48 BSJs in every library (100/150 bp,
+#                           low/high error). On a 1 Gbp genome: 2.3 h for 36M read pairs.
+#   fast       -k 21 -w 11  minimap2's `sr` values. 6-12x faster on a 1 Gbp genome (22 min
+#                           for 36M pairs), all 48/48 on 150 bp low-error reads at any depth,
+#                           but on 100 bp or high-error reads it loses low-coverage (1-3 read)
+#                           circles (43-45/48) and reports 13-38% fewer junction reads; on
+#                           small, short, noisy libraries strandedness auto-detection can see
+#                           too few spliced reads, so declare library_strandedness there.
+#
+# Use `fast` for large genomes with >= 150 bp reads at decent depth; keep `sensitive` when
+# reads are short or noisy, or when low-abundance circles matter. Explicit minimap2_k /
+# minimap2_w in the config override the preset.
+# ─────────────────────────────────────────────────────────────────────────────
+SEED_PRESETS = {"sensitive": (11, 5), "fast": (21, 11)}
+PRESET = str(config.get("preset", "sensitive")).strip().lower()
+if PRESET not in SEED_PRESETS:
+    raise ValueError(f"preset must be one of {sorted(SEED_PRESETS)} (got {PRESET!r}).")
+_k, _w = SEED_PRESETS[PRESET]
+config["minimap2_k"] = int(config.get("minimap2_k") or _k)
+config["minimap2_w"] = int(config.get("minimap2_w") or _w)
+print(f"seeding preset: {PRESET} -> minimap2 -k {config['minimap2_k']} -w {config['minimap2_w']}"
+      + ("" if (config["minimap2_k"], config["minimap2_w"]) == (_k, _w) else " (minimap2_k/_w overridden)"))
+
+
 include: "workflow/rules/trimnami_trim.smk"
 include: "workflow/rules/strandedness.smk"
 include: "workflow/rules/minimap2_alig.smk"
